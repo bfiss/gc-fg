@@ -5,7 +5,7 @@ GIT Tutorial:
  * Execute following commands:
   $ git clone git://github.com/bfiss/gc-fg.git
   $ cd gc-fg
-  $ git remote add origin git@github.com:bfiss/gc-fg.git
+  $ git remote add origin origin ssh://git@github.com/bfiss/gc-fg.git
  * To update files:
   $ git pull
  * To add a new file:
