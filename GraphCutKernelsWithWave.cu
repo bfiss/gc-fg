@@ -14,7 +14,7 @@
 //#define printf(f, ...) ((void)(f, __VA_ARGS__),0)
 #endif
 
-#define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+#define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		excess = local_excess[local_idx];     \
 		cap = edge[thread_id];                                                                       \
@@ -35,7 +35,7 @@
 		__syncthreads(); \
 	} while(0)
 
-#define DO_PUSH(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
+#define DO_PUSH_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
 
 __global__ void InitGraph(KernelWrapper k, int * data_positive, int * data_negative, int penalty) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;

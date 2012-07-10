@@ -14,6 +14,7 @@
 //#define printf(f, ...) ((void)(f, __VA_ARGS__),0)
 #endif
 
+
 #define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		cap = edge[thread_id];                                                                       \
@@ -30,6 +31,31 @@
 	} while(0)
 
 #define DO_PUSH(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
+
+
+#define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+	do{                                                                                              \
+		excess = local_excess[local_idx];     \
+		cap = edge[thread_id];                                                                       \
+		bool changed = false; \
+		if(cap > 0 && excess > 0 && /*local_height[local_idx] == */                                      \
+           /*local_height[local_idx + (x_gap) + (y_gap) * 34] + 1*/ (comp_h&(1<<(comp_h_idx)))  ) {                                   \
+			flow = excess > cap ? cap : excess;                                                      \
+			/*excess -= flow;                                                                          \*/ \
+			edge[thread_id] -= flow;                                                                 \
+			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
+			/*atomicSub(&k.g.n.excess[thread_id], flow);                                               \*/ \
+			/*atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);            \*/ \
+			local_excess[local_idx] -= flow; \
+			did_something = changed = true;                                                                    \
+		}  \
+		__syncthreads(); \
+		changed ? local_excess[local_idx + (x_gap) + (y_gap) * 34] += flow : 0; \
+		__syncthreads(); \
+	} while(0)
+
+#define DO_PUSH_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
+
 
 __global__ void InitGraph(KernelWrapper k, int * data_positive, int * data_negative, int penalty) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -60,6 +86,51 @@ __global__ void InitGraph(KernelWrapper k, int * data_positive, int * data_negat
 	k.g.n.excess[thread_id] = coming - going;
 	k.g.n.status[thread_id] = going >= coming ? 0 : 1;
 	
+	x == 1             ? k.g.n.edge_l[thread_id] = 0 : 0;
+	x == k.g.width - 2 ? k.g.n.edge_r[thread_id] = 0 : 0;
+	y == 1             ? k.g.n.edge_u[thread_id] = 0 : 0;
+	y == k.g.height - 2 ? k.g.n.edge_d[thread_id] = 0 : 0;
+#if NEIGHBORHOOD == 8
+	x == 1             ? k.g.n.edge_ul[thread_id] = k.g.n.edge_dl[thread_id] = 0 : 0;
+	x == k.g.width - 2 ? k.g.n.edge_ur[thread_id] = k.g.n.edge_dr[thread_id] = 0 : 0;
+	y == 1             ? k.g.n.edge_ul[thread_id] = k.g.n.edge_ur[thread_id] = 0 : 0;
+	y == k.g.height - 2 ? k.g.n.edge_dr[thread_id] = k.g.n.edge_dl[thread_id] = 0 : 0;
+#endif
+}
+
+__global__ void InitGraphVarEdges(KernelWrapper k, int * data_positive, int * data_negative, int * up, int * down, int * left, int * right
+#if NEIGHBORHOOD == 8
+		, int * upleft, int * upright, int * downleft, int * downright
+#endif
+) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int thread_id = x + y * k.g.width_ex;
+	int block_id = blockIdx.x + blockIdx.y * k.block_x;
+	k.active[block_id] = 0;
+
+	__syncthreads();
+
+	bool inside_area = x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1;
+
+	inside_area ? k.active[block_id] = 1 : 0;
+	int coming = inside_area ? data_positive[x + y * k.g.width] : 0;
+	int going = inside_area ? data_negative[x + y * k.g.width] : 0;
+
+	k.g.n.edge_u[thread_id] = inside_area ? up[x + y * k.g.width] : 0;
+	k.g.n.edge_d[thread_id] = inside_area ? down[x + y * k.g.width] : 0;
+	k.g.n.edge_l[thread_id] = inside_area ? left[x + y * k.g.width] : 0;
+	k.g.n.edge_r[thread_id] = inside_area ? right[x + y * k.g.width] : 0;
+#if NEIGHBORHOOD == 8
+	k.g.n.edge_ul[thread_id] = inside_area ? upleft[x + y * k.g.width] : 0;
+	k.g.n.edge_ur[thread_id] = inside_area ? upright[x + y * k.g.width] : 0;
+	k.g.n.edge_dl[thread_id] = inside_area ? downleft[x + y * k.g.width] : 0;
+	k.g.n.edge_dr[thread_id] = inside_area ? downright[x + y * k.g.width] : 0;
+#endif
+	k.g.n.height[thread_id] = going >= coming ? 1 : 2;
+	k.g.n.excess[thread_id] = coming - going;
+	k.g.n.status[thread_id] = going >= coming ? 0 : 1;
+
 	x == 1             ? k.g.n.edge_l[thread_id] = 0 : 0;
 	x == k.g.width - 2 ? k.g.n.edge_r[thread_id] = 0 : 0;
 	y == 1             ? k.g.n.edge_u[thread_id] = 0 : 0;
@@ -260,6 +331,116 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 
 				excess = k.g.n.excess[thread_id];
 			} while (--iter);
+		//}
+		if(!skip && did_something)
+			alive[0] = 1;
+	}
+}
+
+__global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
+	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
+		int x = blockIdx.x * blockDim.x + threadIdx.x;
+		int y = blockIdx.y * blockDim.y + threadIdx.y;
+		int thread_id = x + y * k.g.width_ex;
+
+		int comp_h = k.g.n.comp_h[thread_id];
+
+		int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+
+		/*__shared__ int local_height[356];
+
+		local_height[local_idx] = k.g.n.height[thread_id];
+
+		threadIdx.x == 31 && x < k.g.width_ex - 1 ? local_height[local_idx + 1]
+				= k.g.n.height[thread_id + 1] : 0;
+		threadIdx.x == 0 && x > 0 ? local_height[local_idx - 1]
+				= k.g.n.height[thread_id - 1] : 0;
+		threadIdx.y == 7 && y < k.g.height_ex - 1 ? local_height[local_idx + 34]
+		        = k.g.n.height[thread_id + k.g.width_ex] : 0;
+		threadIdx.y == 0 && y > 0 ? local_height[local_idx - 34]
+				= k.g.n.height[thread_id - k.g.width_ex] : 0;
+
+#if NEIGHBORHOOD == 8
+		threadIdx.x == 0 && threadIdx.y == 0 &&
+		x > 0 && y > 0 ? local_height[local_idx - 35] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
+		threadIdx.x == 31 && threadIdx.y == 0 &&
+		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - 33] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
+		threadIdx.x == 0 && threadIdx.y == 7 &&
+		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + 33] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
+		threadIdx.x == 31 && threadIdx.y == 7 &&
+		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
+#endif*/
+
+		__shared__ int local_excess[356];
+
+		local_excess[local_idx] = k.g.n.excess[thread_id];
+
+		threadIdx.x == 31 && x < k.g.width_ex - 1  ? local_excess[local_idx +  1] = 0 : 0;
+		threadIdx.x == 0  && x > 0                 ? local_excess[local_idx -  1] = 0 : 0;
+		threadIdx.y == 7  && y < k.g.height_ex - 1 ? local_excess[local_idx + 34] = 0 : 0;
+		threadIdx.y == 0  && y > 0                 ? local_excess[local_idx - 34] = 0 : 0;
+
+#if NEIGHBORHOOD == 8
+		threadIdx.x == 0 && threadIdx.y == 0 && x > 0                && y > 0                 ? local_excess[local_idx -35] = 0 : 0;
+		threadIdx.x == 31&& threadIdx.y == 0 && x < k.g.width_ex - 1 && y > 0                 ? local_excess[local_idx -33] = 0 : 0;
+		threadIdx.x == 0 && threadIdx.y == 7 && x > 0                && y < k.g.height_ex - 1 ? local_excess[local_idx +33] = 0 : 0;
+		threadIdx.x == 31&& threadIdx.y == 7 && x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_excess[local_idx +35] = 0 : 0;
+#endif
+
+		__syncthreads();
+
+		bool did_something = false;
+
+		int original_excess = local_excess[local_idx];
+
+		//if (k.g.n.status[thread_id]) {
+			int excess;
+			int cap;
+			int flow;
+			do {
+
+				DO_PUSH_WAVE(k.g.n.edge_l,k.g.n.edge_r,1,0,0,0,0);
+				DO_PUSH_WAVE(k.g.n.edge_r,k.g.n.edge_l,0,1,0,0,1);
+				DO_PUSH_WAVE(k.g.n.edge_u,k.g.n.edge_d,0,0,1,0,2);
+				DO_PUSH_WAVE(k.g.n.edge_d,k.g.n.edge_u,0,0,0,1,3);
+#if NEIGHBORHOOD == 8
+				DO_PUSH_WAVE(k.g.n.edge_dr,k.g.n.edge_ul,0,1,0,1,4);
+				DO_PUSH_WAVE(k.g.n.edge_dl,k.g.n.edge_ur,1,0,0,1,5);
+				DO_PUSH_WAVE(k.g.n.edge_ur,k.g.n.edge_dl,0,1,1,0,6);
+				DO_PUSH_WAVE(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
+#endif
+
+				//excess = k.g.n.excess[thread_id];
+			} while (--iter);
+			excess = local_excess[local_idx];
+
+			/*if(threadIdx.x > 0 && threadIdx.x < 31 && threadIdx.y > 0 && threadIdx.y < 7)
+				excess - original_excess ? k.g.n.excess[thread_id] = excess : 0;
+			else*/
+				excess - original_excess ? atomicAdd(&k.g.n.excess[thread_id], excess - original_excess) : 0;
+
+			threadIdx.x == 0  && x > 0                 &&
+			local_excess[local_idx - 1] ? atomicAdd(&k.g.n.excess[thread_id - 1], local_excess[local_idx - 1]) : 0;
+			threadIdx.y == 0  && y > 0                 &&
+			local_excess[local_idx - 34] ? atomicAdd(&k.g.n.excess[thread_id - k.g.width_ex], local_excess[local_idx - 34]) : 0;
+			threadIdx.x == 31 && x < k.g.width_ex - 1  &&
+			local_excess[local_idx + 1] ? atomicAdd(&k.g.n.excess[thread_id + 1], local_excess[local_idx + 1]) : 0;
+			threadIdx.y == 7  && y < k.g.height_ex - 1 &&
+			local_excess[local_idx + 34] ? atomicAdd(&k.g.n.excess[thread_id + k.g.width_ex], local_excess[local_idx + 34]) : 0;
+#if NEIGHBORHOOD == 8
+			threadIdx.x == 0  && x > 0                 &&
+			threadIdx.y == 0  && y > 0                 &&
+			local_excess[local_idx - 35] ? atomicAdd(&k.g.n.excess[thread_id - 35], local_excess[local_idx - 1 - k.g.width_ex]) : 0;
+			threadIdx.x == 31 && x < k.g.width_ex - 1  &&
+			threadIdx.y == 0  && y > 0                 &&
+			local_excess[local_idx - 33] ? atomicAdd(&k.g.n.excess[thread_id - 33], local_excess[local_idx + 1 - k.g.width_ex]) : 0;
+			threadIdx.x == 0  && x > 0                 &&
+			threadIdx.y == 7  && y < k.g.height_ex - 1 &&
+			local_excess[local_idx + 33] ? atomicAdd(&k.g.n.excess[thread_id + 33], local_excess[local_idx - 1 + k.g.width_ex]) : 0;
+			threadIdx.x == 31 && x < k.g.width_ex - 1  &&
+			threadIdx.y == 7  && y < k.g.height_ex - 1 &&
+			local_excess[local_idx + 35] ? atomicAdd(&k.g.n.excess[thread_id + 35], local_excess[local_idx + 1 + k.g.width_ex]) : 0;
+#endif
 		//}
 		if(!skip && did_something)
 			alive[0] = 1;

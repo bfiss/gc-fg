@@ -118,8 +118,7 @@ static void free_graph(GraphWrapper gw) {
 #define ROUND_UP(a,b) ((int)ceil((float)a/(float)b))
 #define MAKE_DIVISIBLE(a,b) (b*ROUND_UP(a,b))
 
-GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * data_positive = NULL, int * data_negative = NULL, int penalty = 0)
-{
+GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * data_positive = NULL, int * data_negative = NULL, int penalty = 0) {
 	GlobalWrapper ret;
 	KernelWrapper ker;
 
@@ -155,23 +154,20 @@ GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * 
 	CUDA_SAFE_CALL(cudaMalloc((void**)&(ker.g.n.comp_n),sizeof(int)*ker.g.size_ex));
 	CUDA_SAFE_CALL(cudaMalloc((void**)&(ker.active),sizeof(int)*ret.block_count));
 
-	CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_positive),sizeof(int)*width*height));
-	CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_negative),sizeof(int)*width*height));
+	ret.k = ker;
 
-	if (full_arguments)
-	{
+	if (full_arguments) {
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_positive),sizeof(int)*width*height));
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_negative),sizeof(int)*width*height));
 		CUDA_SAFE_CALL(cudaMemcpy(ret.data_positive,data_positive,sizeof(int)*width*height,cudaMemcpyHostToDevice));
 		CUDA_SAFE_CALL(cudaMemcpy(ret.data_negative,data_negative,sizeof(int)*width*height,cudaMemcpyHostToDevice));
 		GC_SetGraph(ret);
 	}
 
-	ret.k = ker;
-
 	return ret;
 }
 
-void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative)
-{
+void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative) {
 	//Term::getNeg();
 	gw->data_positive = data_positive;
 	gw->data_negative = data_negative;
@@ -182,13 +178,11 @@ void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative)
 	//CUDA_SAFE_CALL(cudaMemcpy(gw.data_negative,data_negative,sizeof(int)*gw.k.g.size,cudaMemcpyHostToDevice));
 }
 
-void GC_SetPenalty(GlobalWrapper* gw, int p)
-{
+void GC_SetPenalty(GlobalWrapper* gw, int p) {
 	gw->penalty = p;
 }
 
-void GC_SetGraph(GlobalWrapper gw)
-{
+void GC_SetGraph(GlobalWrapper gw) {
 
 	dim3 block(THREADS_X,THREADS_Y,1);
 	dim3 grid(gw.k.block_x, gw.block_y,1);

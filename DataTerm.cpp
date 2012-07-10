@@ -111,7 +111,7 @@
 
 		float pdf[512];
 		CUDA_SAFE_CALL(cudaMemcpy(&pdf[0], d_pdf, sizeof(float)*512, cudaMemcpyDeviceToHost));
-		int kas=0;
+		//int kas=0;
 	}
 
 
