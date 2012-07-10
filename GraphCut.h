@@ -65,6 +65,7 @@ struct GlobalWrapper {
 	KernelWrapper k;
 };
 
+void GC_SetGraph(GlobalWrapper);
 /*
 KernelWrapper GC_Init(int width, int height, int * data);
 void GC_Update(int * data, KernelWrapper k);

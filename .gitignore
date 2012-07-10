@@ -41,6 +41,9 @@ Thumbs.db
 *.jpg
 *.dat
 
+# Videos #
+*.mp4
+
 # CMake #
 CMakeFiles/
 CMakeCache*
@@ -49,3 +52,5 @@ Makefile
 
 # Eclipse #
 .*project
+.project
+

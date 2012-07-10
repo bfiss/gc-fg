@@ -55,7 +55,7 @@ int main() {
 	srand(time(NULL));
 
 	GlobalWrapper gw =
-			GC_Init(width, height, data_positive, data_negative, 2);
+			GC_Init(width, height, true, data_positive, data_negative, 2);
 
 	int * label = (int *) malloc(sizeof(int) * width * height);
 

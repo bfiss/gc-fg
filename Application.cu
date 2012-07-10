@@ -27,7 +27,7 @@ int main() {
 	srand( time(NULL));
 
 	GlobalWrapper gw =
-			GC_Init(width, height, data_positive, data_negative, 600);
+			GC_Init(width, height, true, data_positive, data_negative, 600);
 	free(data_positive);
 	free(data_negative);
 
