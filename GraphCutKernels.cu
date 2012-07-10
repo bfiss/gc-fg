@@ -149,12 +149,13 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	int curr_label = local_label[local_idx];
 	int orig_label = curr_label;
 	
-	int repetitions = 4;
+	int repetitions = 10;
 
 	do{
-		if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
 
 #ifdef SPREAD_ZEROS
+		if (curr_label && x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
+
 			curr_label = ( (comp_n & (1<<0)) || local_label[local_idx+34]) && curr_label;
 			curr_label = ( (comp_n & (1<<1)) || local_label[local_idx-34]) && curr_label;
 			curr_label = ( (comp_n & (1<<2)) || local_label[local_idx+1]) && curr_label;
@@ -166,6 +167,7 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 			curr_label = ( (comp_n & (1<<7)) || local_label[local_idx-35]) && curr_label;
 	#endif
 #else
+		if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
 			curr_label = k.g.n.edge_u[thread_id+k.g.width_ex] && local_label[local_idx+34] || curr_label;
 			curr_label = k.g.n.edge_d[thread_id-k.g.width_ex] && local_label[local_idx-34] || curr_label;
 			curr_label = k.g.n.edge_l[thread_id+1] && local_label[local_idx+1] || curr_label;
@@ -178,6 +180,7 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	#endif
 #endif
 			curr_label != orig_label ? label[label_id] = curr_label : 0;
+			curr_label != orig_label ? local_label[local_idx] = curr_label : 0;
 			curr_label != orig_label ? alive[0] = 1 : 0;
 			orig_label = curr_label;
 		}
