@@ -2,6 +2,8 @@ PROJECT(firstCudaExample)
 
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
+set(CMAKE_BUILD_TYPE Release)
+
 #Link with libcutil (expected to be in ${CUDA_SDK_ROOT_DIR}/C/lib)
 INCLUDE(FindCUDA)
 
@@ -21,6 +23,5 @@ LINK_LIBRARIES("-L${CUDA_SDK_ROOT_DIR}/shared/lib -lshrutil_x86_64")
 
 set(CUDA_NVCC_FLAGS "-arch=sm_20")
 
-#Rule to build executable program matrixMult from matrixmul.cu
-# and matrixMul_gold.cpp
 CUDA_ADD_EXECUTABLE(app ./Application.cu)
+CUDA_ADD_EXECUTABLE(dbg ./Debug.cu)

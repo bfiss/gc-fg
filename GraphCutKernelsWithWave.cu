@@ -16,17 +16,23 @@
 
 #define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
+		excess = local_excess[local_idx];     \
 		cap = edge[thread_id];                                                                       \
+		bool changed = false; \
 		if(cap > 0 && excess > 0 && /*local_height[local_idx] == */                                      \
            /*local_height[local_idx + (x_gap) + (y_gap) * 34] + 1*/ (comp_h&(1<<(comp_h_idx)))  ) {                                   \
 			flow = excess > cap ? cap : excess;                                                      \
-			excess -= flow;                                                                          \
+			/*excess -= flow;                                                                          \*/ \
 			edge[thread_id] -= flow;                                                                 \
 			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
-			atomicSub(&k.g.n.excess[thread_id], flow);                                               \
-			atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);            \
-			did_something = true;                                                                    \
-		}                                                                                            \
+			/*atomicSub(&k.g.n.excess[thread_id], flow);                                               \*/ \
+			/*atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);            \*/ \
+			local_excess[local_idx] -= flow; \
+			did_something = changed = true;                                                                    \
+		}  \
+		__syncthreads(); \
+		changed ? local_excess[local_idx + (x_gap) + (y_gap) * 34] += flow : 0; \
+		__syncthreads(); \
 	} while(0)
 
 #define DO_PUSH(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
@@ -193,7 +199,7 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 
 		int comp_h = k.g.n.comp_h[thread_id];
 
-		//int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+		int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
 
 		/*__shared__ int local_height[356];
 
@@ -219,7 +225,7 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
 #endif*/
 
-		/*__shared__ int local_excess[356];
+		__shared__ int local_excess[356];
 
 		local_excess[local_idx] = k.g.n.excess[thread_id];
 
@@ -233,17 +239,20 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 		threadIdx.x == 31&& threadIdx.y == 0 && x < k.g.width_ex - 1 && y > 0                 ? local_excess[local_idx -33] = 0 : 0;
 		threadIdx.x == 0 && threadIdx.y == 7 && x > 0                && y < k.g.height_ex - 1 ? local_excess[local_idx +33] = 0 : 0;
 		threadIdx.x == 31&& threadIdx.y == 7 && x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_excess[local_idx +35] = 0 : 0;
-#endif*/
+#endif
 
 		__syncthreads();
 		
 		bool did_something = false;
 
+		int original_excess = local_excess[local_idx];
+
 		//if (k.g.n.status[thread_id]) {
-			int excess = k.g.n.excess[thread_id];
+			int excess;
 			int cap;
 			int flow;
 			do {
+
 				DO_PUSH(k.g.n.edge_l,k.g.n.edge_r,1,0,0,0,0);
 				DO_PUSH(k.g.n.edge_r,k.g.n.edge_l,0,1,0,0,1);
 				DO_PUSH(k.g.n.edge_u,k.g.n.edge_d,0,0,1,0,2);
@@ -255,8 +264,21 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 				DO_PUSH(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
 #endif
 
-				excess = k.g.n.excess[thread_id];
+				//excess = k.g.n.excess[thread_id];
 			} while (--iter);
+			excess = local_excess[local_idx];
+
+			/*if(threadIdx.x > 0 && threadIdx.x < 31 && threadIdx.y > 0 && threadIdx.y < 7)
+				excess - original_excess ? k.g.n.excess[thread_id] = excess : 0;
+			else*/
+				excess - original_excess ? atomicAdd(&k.g.n.excess[thread_id], excess - original_excess) : 0;
+				
+			threadIdx.x == 0 && x > 0 && local_excess[local_idx - 1] ? atomicAdd(&k.g.n.excess[thread_id - 1], local_excess[local_idx - 1]) : 0;
+			threadIdx.y == 0 && y > 0 && local_excess[local_idx - 34] ? atomicAdd(&k.g.n.excess[thread_id - k.g.width_ex], local_excess[local_idx - 34]) : 0;
+			threadIdx.x == 31 && x < k.g.width_ex - 1 && local_excess[local_idx + 1] ? atomicAdd(&k.g.n.excess[thread_id + 1], local_excess[local_idx + 1]) : 0;
+			threadIdx.y == 7 && y < k.g.height_ex - 1 && local_excess[local_idx + 34] ? atomicAdd(&k.g.n.excess[thread_id + k.g.width_ex], local_excess[local_idx + 34]) : 0;
+#if NEIGHBORHOOD == 8
+#endif
 		//}
 		if(!skip && did_something)
 			alive[0] = 1;

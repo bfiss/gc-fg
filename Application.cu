@@ -12,6 +12,7 @@ int main() {
 
 	ifstream face_file;
 	face_file.open("rihanna.dat");
+	//face_file.open("face.dat");
 
 	face_file >> height >> width;
 
@@ -47,6 +48,7 @@ int main() {
 	int dumb_i;
 	string dumb_s;
 	face_in.open("rihanna.ppm");
+	//face_in.open("face.ppm");
 	face_in >> dumb_s >> dumb_i >> dumb_i >> dumb_i;
 	
 	// print processed image

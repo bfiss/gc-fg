@@ -12,14 +12,17 @@
 #include <cutil.h>
 #include <cutil_inline.h>
 
-#define NEIGHBORHOOD 8
+#define NEIGHBORHOOD 4
+
+//#define DEBUG_MODE
+
+#define SPREAD_ZEROS
 
 #define THREADS_X 32
 #define THREADS_Y 8
 #define THREAD_COUNT ((THREADS_X)*(THREADS_Y))
 
 struct NodeWrapper {
-	int * edge_sink;
 	int * edge_l;
 	int * edge_r;
 	int * edge_u;
@@ -33,6 +36,8 @@ struct NodeWrapper {
 	int * height;
 	int * excess;
 	int * status;
+	int * comp_h;
+	int * comp_n;
 };
 
 struct GraphWrapper {
