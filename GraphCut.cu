@@ -118,7 +118,12 @@ static void free_graph(GraphWrapper gw) {
 #define ROUND_UP(a,b) ((int)ceil((float)a/(float)b))
 #define MAKE_DIVISIBLE(a,b) (b*ROUND_UP(a,b))
 
-GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * data_positive = NULL, int * data_negative = NULL, int penalty = 0) {
+GlobalWrapper GC_Init(int width, int height, int * data_positive = NULL, int * data_negative = NULL, int penalty = 0,
+		  	  	  	   int * up = NULL, int * down = NULL, int * left = NULL, int * right = NULL
+#if NEIGHBORHOOD == 8
+		  	  	  	   , int * upleft = NULL, int * upright = NULL, int * downleft = NULL, int * downright = NULL
+#endif
+		  	  	  	   ) {
 	GlobalWrapper ret;
 	KernelWrapper ker;
 
@@ -136,6 +141,8 @@ GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * 
 	ret.block_count = ROUND_UP(ker.g.size_ex,THREAD_COUNT);
 
 	ret.penalty = penalty;
+
+	ret.varying_edges = up != NULL;
 
 	CUDA_SAFE_CALL(cudaMalloc((void**)&(ker.g.n.edge_u),sizeof(int)*ker.g.size_ex));
 	CUDA_SAFE_CALL(cudaMalloc((void**)&(ker.g.n.edge_d),sizeof(int)*ker.g.size_ex));
@@ -156,11 +163,19 @@ GlobalWrapper GC_Init(int width, int height, bool full_arguments = false, int * 
 
 	ret.k = ker;
 
-	if (full_arguments) {
-		CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_positive),sizeof(int)*width*height));
+	if (data_positive != NULL) {
+		/*CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_positive),sizeof(int)*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(ret.data_negative),sizeof(int)*width*height));
 		CUDA_SAFE_CALL(cudaMemcpy(ret.data_positive,data_positive,sizeof(int)*width*height,cudaMemcpyHostToDevice));
-		CUDA_SAFE_CALL(cudaMemcpy(ret.data_negative,data_negative,sizeof(int)*width*height,cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL(cudaMemcpy(ret.data_negative,data_negative,sizeof(int)*width*height,cudaMemcpyHostToDevice));*/
+
+		GC_SetDataterms(&ret, data_positive, data_negative);
+		if(ret.varying_edges)
+			GC_SetEdges(&ret,up,down,left,right
+#if NEIGHBORHOOD == 8
+				    ,upleft,upright,downleft,downright
+#endif
+			);
 		GC_SetGraph(ret);
 	}
 
@@ -178,7 +193,26 @@ void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative) 
 	//CUDA_SAFE_CALL(cudaMemcpy(gw.data_negative,data_negative,sizeof(int)*gw.k.g.size,cudaMemcpyHostToDevice));
 }
 
+void GC_SetEdges(GlobalWrapper* gw, int * up = NULL, int * down = NULL, int * left = NULL, int * right = NULL
+#if NEIGHBORHOOD == 8
+		  	  	  	   , int * upleft = NULL, int * upright = NULL, int * downleft = NULL, int * downright = NULL
+#endif
+) {
+	gw->varying_edges = true;
+	gw->up = up;
+	gw->down = down;
+	gw->left = left;
+	gw->right = right;
+#if NEIGHBORHOOD == 8
+	gw->upleft = upleft;
+	gw->upright = upright;
+	gw->downleft = downleft;
+	gw->downright = downright;
+#endif
+}
+
 void GC_SetPenalty(GlobalWrapper* gw, int p) {
+	gw->varying_edges = false;
 	gw->penalty = p;
 }
 
@@ -188,14 +222,24 @@ void GC_SetGraph(GlobalWrapper gw) {
 	dim3 grid(gw.k.block_x, gw.block_y,1);
 
 	printf("pen %d\n", gw.penalty);
-	InitGraph<<<grid,block>>>(gw.k, gw.data_positive, gw.data_negative, gw.penalty);
-	cutilCheckMsg("InitGraph kernel launch failure");
+	if(gw.varying_edges) {
+		InitGraphVarEdges<<<grid,block>>>(gw.k, gw.data_positive, gw.data_negative, gw.up, gw.down, gw.left, gw.right
+		#if NEIGHBORHOOD == 8
+				, gw.upleft, gw.upright, gw.downleft, gw.downright
+		#endif
+		);
+		cutilCheckMsg("InitGraphVarEdges kernel launch failure");
+	} else {
+		InitGraph<<<grid,block>>>(gw.k, gw.data_positive, gw.data_negative, gw.penalty);
+		cutilCheckMsg("InitGraph kernel launch failure");
+	}
 }
 
+/*
 void GC_Update(GlobalWrapper gw, int * data) {
 	assert(gw.k.block_x);
 
-}
+}*/
 
 #define ACTIVITY_CHECK_FREQUENCY 10
 #define GLOBAL_RELABEL_FREQUENCY 1500 // 150
@@ -378,8 +422,8 @@ void GC_End(GlobalWrapper * gw) {
 	CUDA_SAFE_CALL(cudaFree(gw->k.g.n.comp_n));
 	CUDA_SAFE_CALL(cudaFree(gw->k.active));
 	
-	CUDA_SAFE_CALL(cudaFree(gw->data_positive));
-	CUDA_SAFE_CALL(cudaFree(gw->data_negative));
+	/*CUDA_SAFE_CALL(cudaFree(gw->data_positive));
+	CUDA_SAFE_CALL(cudaFree(gw->data_negative));*/
 
 	clean.k.block_x = clean.block_y = clean.k.g.width = clean.k.g.height = 0;
 	*gw = clean;

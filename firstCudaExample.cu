@@ -14,8 +14,8 @@ using namespace std;
 
 #define USE_CPU false
 #define MIXTURE false
-#define VIDEO false
-#define BASHMODE true
+#define VIDEO true
+#define BATCHMODE false
 
 uchar* out_data;
 uchar* inp_data;
@@ -191,14 +191,14 @@ int main()
 	win = 0;
 
 #if VIDEO
-	loadVideo("vid.mp4");
+	loadVideo("golf.mp4");
 #else
 	loadImage("group.jpg");
 #endif
 
 	init();
 
-#if BASHMODE
+#if BATCHMODE
 
 	penalty = 7000;
 	DataTerm::setImage(inp_data);

@@ -61,16 +61,31 @@ struct GlobalWrapper {
 	int block_count;
 	int * data_positive;
 	int * data_negative;
+	int * up;
+	int * down;
+	int * left;
+	int * right;
+#if NEIGHBORHOOD == 8
+	int * upleft;
+	int * upright;
+	int * downleft;
+	int * downright;
+#endif
 	int penalty;
+	bool varying_edges;
 	KernelWrapper k;
 };
 
-void GC_SetGraph(GlobalWrapper);
-/*
 KernelWrapper GC_Init(int width, int height, int * data);
-void GC_Update(int * data, KernelWrapper k);
+void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative);
+void GC_SetEdges(GlobalWrapper* gw, int *, int *, int *, int *
+#if NEIGHBORHOOD == 8
+		  	  	   , int *, int *, int *, int *
+#endif
+);
+void GC_SetGraph(GlobalWrapper gw);
+//void GC_Update(int * data, KernelWrapper k);
 void GC_Optimize(KernelWrapper k, int * label);
 void GC_End(KernelWrapper * k);
-*/
 
 #endif /* GRAPHCUT_H_ */
