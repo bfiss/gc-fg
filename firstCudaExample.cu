@@ -15,6 +15,7 @@ using namespace std;
 #define USE_CPU false
 #define MIXTURE false
 #define VIDEO false
+#define BASHMODE true
 
 uchar* out_data;
 uchar* inp_data;
@@ -86,6 +87,7 @@ void mouseCallback (int event, int x, int y, int flags, void* param)
 
 		case CV_EVENT_LBUTTONUP:
 
+			printf("%d %d\n", x,y);
 			DataTerm::selectOnMap(x, y, 8);
 	        DataTerm::drawSelection(inp_data, out_data);
 	    	displayImage(out_data, "win1");
@@ -196,7 +198,22 @@ int main()
 
 	init();
 
+#if BASHMODE
 
+	penalty = 7000;
+	DataTerm::setImage(inp_data);
+	DataTerm::selectOnMap(200, 70, 8);
+	DataTerm::selectOnMap(204, 62, 8);
+	DataTerm::selectOnMap(201, 68, 8);
+
+	DataTerm::getDataTermsMixture(data_pos, data_neg);
+
+	process();
+
+	//displayImage(out_data, "win1");
+
+
+#else
 	char key;
 	while(1){
 
@@ -234,7 +251,9 @@ int main()
 	    		break;
 	    }
 	}
+#endif
 
+	//cvWaitKey();
 	stop();
 	return 0;
 }
