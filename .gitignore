@@ -39,10 +39,13 @@ Thumbs.db
 # Images #
 *.ppm
 *.jpg
-*.dat
 
 # Videos #
 *.mp4
+
+# Data #
+*.txt
+*.dat
 
 # CMake #
 CMakeFiles/
@@ -54,3 +57,5 @@ Makefile
 .*project
 .project
 
+# Folders #
+Imgseg
