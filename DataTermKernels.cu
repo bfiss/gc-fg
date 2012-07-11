@@ -78,8 +78,8 @@ __global__ void K_CalcTerms(uchar* inp_img, float* pdf, int* pos, int* neg, int 
 
 	float p = pdf[(y*N_PDF+x)*N_PDF+z];
 
-	pos[j*width+i] = (int)(100000.0*p);
-	neg[j*width+i] = (int)(100000.0*(1-p));;
+	pos[j*width+i] = (int)(300000.0*p);
+	neg[j*width+i] = (int)(300000.0*(1-p));;
 }
 
 

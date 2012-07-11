@@ -1,4 +1,4 @@
-/** @file
+/*! @file
  * Functions for Data Term calculation and Image highlighting.
  */
 
@@ -111,7 +111,7 @@
 		 */
 		int x1, y1;
 		// select square around x,y with fixed sides
-		int size = 1;
+		int size = 5;
 		for (int i=0;i<size; i++)
 		{
 			for (int j=0; j<size; j++)

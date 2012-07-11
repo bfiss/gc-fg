@@ -1,4 +1,4 @@
-/** @file
+/*! @file
  * imageIO.h
  * Functions and data structures for image and video loading. Basic gui element creation and image display.
  *

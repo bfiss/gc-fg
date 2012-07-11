@@ -1,5 +1,6 @@
-/** @file
+/*! @file
  * DataTerm.h
+ * Definitions and data structures for data term estimation algorithms.
  */
 #ifndef DATATERM_H
 #define DATATERM_H
