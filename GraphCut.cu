@@ -1,10 +1,13 @@
-/*
- * GraphCut.cu
- *
- *  Created on: Jun 8, 2012
- *      Author: bruno
- */
 
+
+/*!
+ * \file GraphCut.cu
+ *
+ * \author bruno
+ * \date Jun 8, 2012
+ *
+ * CUDA source file that contains the interface of Graph Cut, and is responsible for host sided computations.
+ */
 
 #ifndef GRAPHCUT_CU_
 #define GRAPHCUT_CU_
@@ -16,6 +19,39 @@
 
 #include "GraphCut.h"
 #include "GraphCutKernels.cu"
+
+//! Sets the data terms
+/*!
+ * This function expects \a data_positive and \a data_negative to be
+ * pointers to device allocated memory holding the data terms. It updates
+ * the current data terms for the Graph Cut algorithm, without optimizing. This
+ * functions requires the graph to be already initialized (via a call to GC_Init).
+ */
+void GC_SetDataterms(GlobalWrapper* gw, int* data_positive, int* data_negative);
+
+//! Sets the edge values between neighbors
+/*!
+ * This function expects its parameters to be
+ * pointers to device allocated memory holding the edge values. It updates
+ * the current edge values for the Graph Cut algorithm, without optimizing. This
+ * functions requires the graph to be already initialized (via a call to GC_Init).
+ *
+ */
+void GC_SetEdges(GlobalWrapper* gw, int *, int *, int *, int *
+#if NEIGHBORHOOD == 8
+		  	  	   , int *, int *, int *, int *
+#endif
+);
+
+//! Sets up the internal graph to allow graph cut to be run.
+/*!
+ * This function should be called after having set data terms (and possibly edge values), either within
+ * GC_Init, or with the specific functions. It prepares the graph structure used in the algorithm, allowing
+ * optimizations to be run afterwards.
+ *
+ */
+void GC_SetGraph(GlobalWrapper gw);
+
 
 #ifdef DEBUG_MODE
 
@@ -115,9 +151,27 @@ static void free_graph(GraphWrapper gw) {
 
 #endif
 
+/*! \def ROUND_UP(a,b)
+ * \brief Rounds \a a divided by \a b up.
+ */
 #define ROUND_UP(a,b) ((int)ceil((float)a/(float)b))
+
+/*! \def MAKE_DIVISIBLE(a,b)
+ * \brief Returns the first multiple of \a b that is bigger or equal to \a a
+ */
 #define MAKE_DIVISIBLE(a,b) (b*ROUND_UP(a,b))
 
+//! Initializes the internal structure of Graph Cut
+/*!
+ * This function should be the first called in order to perform a Graph Cut.
+ * It must receive the \a width and \a height of the picture, network or field to be cut.
+ * It may also receive the data terms, which are used as the capacities between each node and the source and
+ * sink nodes, respectively, and a \a penalty, which will be the capacity of edges between neighbor nodes.
+ * The last possibility is to explicitly give the capacities of edges between neighbors, using one array per direction.
+ * In this case, \a penalty is ignored. Data terms and edge values are expected to be in
+ * device memory, and to have a size equal to the picture/field size.
+ *
+ */
 GlobalWrapper GC_Init(int width, int height, int * data_positive = NULL, int * data_negative = NULL, int penalty = 0,
 		  	  	  	   int * up = NULL, int * down = NULL, int * left = NULL, int * right = NULL
 #if NEIGHBORHOOD == 8
@@ -211,6 +265,12 @@ void GC_SetEdges(GlobalWrapper* gw, int * up = NULL, int * down = NULL, int * le
 #endif
 }
 
+
+//! This function sets every edge capacity to \a p.
+/*!
+ *
+ *
+ */
 void GC_SetPenalty(GlobalWrapper* gw, int p) {
 	gw->varying_edges = false;
 	gw->penalty = p;
@@ -241,11 +301,43 @@ void GC_Update(GlobalWrapper gw, int * data) {
 
 }*/
 
+/*! \def ACTIVITY_CHECK_FREQUENCY
+ * \brief How often inactive blocks are used in the kernels.
+ *
+ * This parameter controls when blocks that were marked as inactive are
+ * used again in Push and Relabel. After this many iterations, all blocks are used again.
+ */
 #define ACTIVITY_CHECK_FREQUENCY 10
+
+/*! \def GLOBAL_RELABEL_FREQUENCY
+ * \brief How often Global Relabel is run.
+ *
+ * This parameter controls after how many iterations of Push and Relabel the Global Relabel is executed.
+ */
 #define GLOBAL_RELABEL_FREQUENCY 20 // 150
+
+/*! \def FIRST_GLOBAL_RELABEL
+ * \brief At which iteration Global Relabel is first run.
+ *
+ * This parameter controls at which iteration Global Relabel is first run.
+ */
 #define FIRST_GLOBAL_RELABEL 15
+
+/*! \def PUSHES_PER_RELABEL
+ * \brief Controls how many pushes are executed per relabel.
+ *
+ * This parameter controls the number of pushes executed consecutively inside the same Push kernel.
+ * It defines how many pushes happen for every relabel.
+ */
 #define PUSHES_PER_RELABEL 4
 
+//! Runs Graph Cut on given data
+/*!
+ * This function expects a Global Wrapper \a gw properly initialized
+ * using GC_Init and the other set functions. It then performs a Graph Cut on
+ * the data given.
+ *
+ */
 void GC_Optimize(GlobalWrapper gw, int * label) {
 	dim3 block(THREADS_X,THREADS_Y,1);
 	dim3 grid(gw.k.block_x,gw.block_y,1);
@@ -402,6 +494,12 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 	free(zero_arr);
 }
 
+//! Terminates Graph Cut and frees allocated memory
+/*!
+ * This function should be called in order to properly terminate Graph Cut
+ * and free the structures allocated by it.
+ *
+ */
 void GC_End(GlobalWrapper * gw) {
 	GlobalWrapper clean;
 

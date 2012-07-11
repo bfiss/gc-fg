@@ -47,10 +47,10 @@
 		numBlocks_lin.y = 1;
 
 
-		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_img),           sizeof(uchar)*3*width*height));
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_img),           sizeof(unsigned char)*3*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_gaussian),      sizeof(float)*N_PDF));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_pdf),           sizeof(float)*N_PDF*N_PDF*N_PDF));
-		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_selection_map), sizeof(uchar)*width*height));
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_selection_map), sizeof(unsigned char)*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_pos), sizeof(int)*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_neg), sizeof(int)*width*height));
 
@@ -68,9 +68,9 @@
 		CUDA_SAFE_CALL(cudaFree(d_gaussian));
 	}
 
-	void DataTerm::setImage (uchar* h_img)
+	void DataTerm::setImage (unsigned char* h_img)
 	{
-		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_img, sizeof(uchar)*3*width*height, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_img, sizeof(unsigned char)*3*width*height, cudaMemcpyHostToDevice));
 	}
 
 
@@ -122,9 +122,9 @@
 
 
 	// highlight all pixels from inp that correspond to a 1-element in selection map
-	void DataTerm::drawSelection(uchar* h_inp, uchar* h_out)
+	void DataTerm::drawSelection(unsigned char * h_inp, unsigned char* h_out)
 	{
-		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_inp, sizeof(uchar)*3*width*height, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_inp, sizeof(unsigned char)*3*width*height, cudaMemcpyHostToDevice));
 		K_DrawMap<<<numBlocks_img, threadsPerBlock>>>(d_selection_map, d_img, width);
-		CUDA_SAFE_CALL(cudaMemcpy(h_out, d_img, sizeof(uchar)*3*width*height, cudaMemcpyDeviceToHost));
+		CUDA_SAFE_CALL(cudaMemcpy(h_out, d_img, sizeof(unsigned char)*3*width*height, cudaMemcpyDeviceToHost));
 	}

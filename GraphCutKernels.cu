@@ -1,8 +1,10 @@
-/*
- * GraphCutKernels.cu
+/*!
+ * \file GraphCutKernels.cu
  *
- *  Created on: Jun 8, 2012
- *      Author: bruno
+ * \author bruno
+ * \date Jun 8, 2012
+ *
+ * CUDA source file that contains the kernels for this Graph Cut implementation.
  */
 
 #ifndef GRAPHCUTKERNELS_CU_
@@ -10,11 +12,9 @@
 
 #include <stdio.h>
 
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 200)
-//#define printf(f, ...) ((void)(f, __VA_ARGS__),0)
-#endif
-
-
+/*! \def DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)
+ * \brief Internal macro used to make a push in a certain direction with a certain node.
+ */
 #define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		cap = edge[thread_id];                                                                       \
@@ -30,9 +30,17 @@
 		}                                                                                            \
 	} while(0)
 
+/*! \def DO_PUSH(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx)
+ * \brief Short version for DO_PUSH_C macro.
+ */
 #define DO_PUSH(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
 
-
+/*! \def DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)
+ * \brief Internal macro used to make a push in a certain direction with a certain node.
+ *
+ * This version does not use atomic functions, but synchronizes. An attempt to improve the wave operator
+ * by Timo Stich, but that is not very succesful, perhaps due to too frequent synchronization.
+ */
 #define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		excess = local_excess[local_idx];     \
@@ -54,9 +62,17 @@
 		__syncthreads(); \
 	} while(0)
 
+/*! \def DO_PUSH_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx)
+ * \brief Short version for DO_PUSH_C_WAVE macro.
+ */
 #define DO_PUSH_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
 
-
+//! Initializes the internal structure of Graph Cut.
+/*!
+ * This kernel initializes the data structures used in the other kernels. It uses a fixed penalty as the edge capacity
+ * between neighbors.
+ *
+ */
 __global__ void InitGraph(KernelWrapper k, int * data_positive, int * data_negative, int penalty) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -98,6 +114,12 @@ __global__ void InitGraph(KernelWrapper k, int * data_positive, int * data_negat
 #endif
 }
 
+//! Initializes the internal structure of Graph Cut.
+/*!
+ * This kernel initializes the data structures used in the other kernels. It sets the edge capacities
+ * between neighbors using the given parameters.
+ *
+ */
 __global__ void InitGraphVarEdges(KernelWrapper k, int * data_positive, int * data_negative, int * up, int * down, int * left, int * right
 #if NEIGHBORHOOD == 8
 		, int * upleft, int * upright, int * downleft, int * downright
@@ -143,10 +165,19 @@ __global__ void InitGraphVarEdges(KernelWrapper k, int * data_positive, int * da
 #endif
 }
 
+
 #ifdef SPREAD_ZEROS
+/*! \def UPDATE_COMP_N_LABEL(i,edge)
+ * \brief Updates the compressed neighborhood for one direction.
+ */
 #define UPDATE_COMP_N_LABEL(i,edge) comp_n |= (1<<(i)) * (!edge[thread_id])
 #endif
 
+//! Initializes the final labeling
+/*!
+ * This kernel initializes \a label in order to spread values correctly in SpreadLabels.
+ *
+ */
 __global__ void InitLabels(KernelWrapper k, int * label) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -179,6 +210,11 @@ __global__ void InitLabels(KernelWrapper k, int * label) {
 	k.g.n.comp_n[thread_id] = comp_n;
 }
 
+//! Performs one step of the final labeling
+/*!
+ * This kernel updates neighbors that are connected to labeled nodes, spreading the labels.
+ *
+ */
 __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -259,6 +295,11 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	} while(--repetitions);
 }
 
+	//! Performs the Push operation
+	/*!
+	 * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
+	 * depending on the parameter PUSHES_PER_RELABEL.
+	 */
 __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
 		int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -337,6 +378,11 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 	}
 }
 
+//! Performs the Push operation using the wave-like DO_PUSH macro.
+/*!
+ * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
+ * depending on the parameter PUSHES_PER_RELABEL.
+ */
 __global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
 	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
 		int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -447,10 +493,24 @@ __global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
 	}
 }
 
+
+/*! \def ADJUST_HEIGHT(diff,edge)
+ * \brief Updates the current height considering the neighbor in one direction.
+ */
 #define ADJUST_HEIGHT(diff,edge) (height > local_height[local_idx + (diff)] && (edge)[thread_id] > 0) ? height = local_height[local_idx + (diff)] : 0
 
+/*! \def UPDATE_COMP_H(i,diff)
+ * \brief Updates the compressed height for one direction. Compressed heights will be used in Push.
+ *
+ *  Updates by checking possibility to push to the neighbor in a certain direction. Only considers height compatibility.
+ */
 #define UPDATE_COMP_H(i,diff) comp_h |= (1 << (i)) * (local_height[local_idx] == local_height[local_idx+(diff)] + 1)
 
+
+//! Performs the Relabel operation.
+/*!
+ * This is one of the classical operations from Push-Relabel algorithms. Relabel is applied to every node once.
+ */
 __global__ void Relabel(KernelWrapper k, int skip) {
 	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
 		int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -529,6 +589,9 @@ __global__ void Relabel(KernelWrapper k, int skip) {
 	}
 }
 
+//! Updates the activity status of each block by reading the status of each thread.
+/*!
+ */
 __global__ void UpdateActivity(int * status, int * active, int block_x, int width_ex) {
 	int block_id = blockIdx.x + blockIdx.y * block_x;
 	active[block_id] = 0;
@@ -542,8 +605,19 @@ __global__ void UpdateActivity(int * status, int * active, int block_x, int widt
 	status[thread_id] ? active[block_id] = 1 : 0;
 }
 
+/*! \def UPDATE_COMP_N(i,diff)
+ * \brief Updates the compressed neighborhood.
+ *
+ *  Updates by checking possibility to push to the neighbor in a certain direction. Only considers edge capacity.
+ */
 #define UPDATE_COMP_N(i,edge) comp_n |= (1<<(i)) * (edge[thread_id] > 0)
 
+
+//! Initializes global relabeling.
+/*!
+ * This kernel resets heights and updates compressed neighborhoods to prepare for global relabeling.
+ *
+ */
 __global__ void InitGlobalRelabel(KernelWrapper k) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -572,8 +646,17 @@ __global__ void InitGlobalRelabel(KernelWrapper k) {
 	k.g.n.comp_n[thread_id] = comp_n;
 }
 
+/*! \def COMP_ADJUST_HEIGHT(diff,i)
+ * \brief Updates the current height considering the neighbor in one direction, and using the compressed neighborhood.
+ */
 #define COMP_ADJUST_HEIGHT(diff,i) (height > local_height[local_idx + (diff)] && ((1<<(i)) & comp_n)) ? height = local_height[local_idx + (diff)] : 0
 
+//! Performs one step of a Global Relabel, and sets alive to true if the kernel should be run again.
+/*!
+ * Global relabeling sets the heights of the nodes to the distance between them and the closest sink-connected node. This
+ * tends to help make flow go in the right direction, decreasing the number of necessary iterations for the algorithm.
+ *
+ */
 __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;

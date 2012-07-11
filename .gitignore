@@ -44,7 +44,6 @@ Thumbs.db
 *.mp4
 
 # Data #
-*.txt
 *.dat
 
 # CMake #
