@@ -1,4 +1,4 @@
-/*! @file
+/*! @file DataTerm.cpp
  * Functions for Data Term calculation and Image highlighting.
  */
 
