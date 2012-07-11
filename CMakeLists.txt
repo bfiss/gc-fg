@@ -30,6 +30,9 @@ LINK_LIBRARIES("opencv_highgui")
 
 set(CUDA_NVCC_FLAGS "-arch=sm_20")
 
+CUDA_ADD_EXECUTABLE(multiplyMRF ./multiplyMRF.cpp)
+CUDA_ADD_EXECUTABLE(solveMRF ./solveMRF.cu)
+
 CUDA_ADD_EXECUTABLE(app ./Application.cu)
 CUDA_ADD_EXECUTABLE(dbg ./Debug.cu)
 

@@ -242,9 +242,9 @@ void GC_Update(GlobalWrapper gw, int * data) {
 }*/
 
 #define ACTIVITY_CHECK_FREQUENCY 10
-#define GLOBAL_RELABEL_FREQUENCY 1500 // 150
-#define FIRST_GLOBAL_RELABEL 200
-#define PUSHES_PER_RELABEL 8
+#define GLOBAL_RELABEL_FREQUENCY 20 // 150
+#define FIRST_GLOBAL_RELABEL 15
+#define PUSHES_PER_RELABEL 4
 
 void GC_Optimize(GlobalWrapper gw, int * label) {
 	dim3 block(THREADS_X,THREADS_Y,1);
