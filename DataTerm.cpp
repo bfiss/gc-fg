@@ -53,11 +53,10 @@
 		numBlocks_lin.y = 1;
 
 
-		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_img),           sizeof(uchar)*3*width*height));
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_img),           sizeof(unsigned char)*3*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_gaussian),      sizeof(float)*N_PDF));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_pdf),           sizeof(float)*N_PDF*N_PDF*N_PDF));
-		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_selection_map), sizeof(uchar)*width*height));
-		// will be freed in graph cuts
+		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_selection_map), sizeof(unsigned char)*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_pos), sizeof(int)*width*height));
 		CUDA_SAFE_CALL(cudaMalloc((void**)&(d_neg), sizeof(int)*width*height));
 
@@ -83,7 +82,7 @@
 		/*!
 		 * Load image data to device.
 		 */
-		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_img, sizeof(uchar)*3*width*height, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_img, sizeof(unsigned char)*3*width*height, cudaMemcpyHostToDevice));
 	}
 
 	void DataTerm::reset()
@@ -160,7 +159,7 @@
 		 * @param[in] h_inp Input image rawdata
 		 * @param[out] h_out processed image data
 		 */
-		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_inp, sizeof(uchar)*3*width*height, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL(cudaMemcpy(d_img, h_inp, sizeof(unsigned char)*3*width*height, cudaMemcpyHostToDevice));
 		K_DrawMap<<<numBlocks_img, threadsPerBlock>>>(d_selection_map, d_img, width);
-		CUDA_SAFE_CALL(cudaMemcpy(h_out, d_img, sizeof(uchar)*3*width*height, cudaMemcpyDeviceToHost));
+		CUDA_SAFE_CALL(cudaMemcpy(h_out, d_img, sizeof(unsigned char)*3*width*height, cudaMemcpyDeviceToHost));
 	}

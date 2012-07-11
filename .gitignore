@@ -1,4 +1,7 @@
-ompiled source #
+# backups #
+*~
+
+# compiled source #
 ###################
 *.com
 *.class
@@ -39,10 +42,12 @@ Thumbs.db
 # Images #
 *.ppm
 *.jpg
-*.dat
 
 # Videos #
 *.mp4
+
+# Data #
+*.dat
 
 # CMake #
 CMakeFiles/
@@ -54,3 +59,5 @@ Makefile
 .*project
 .project
 
+# Folders #
+Imgseg

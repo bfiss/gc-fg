@@ -24,10 +24,17 @@ int main() {
 		face_file >> data_positive[i];
 	face_file.close();
 
+	int * d_data_positive, * d_data_negative;
+
+	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_data_positive),sizeof(int)*width*height));
+	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_data_negative),sizeof(int)*width*height));
+	CUDA_SAFE_CALL(cudaMemcpy(d_data_positive,data_positive,sizeof(int)*width*height,cudaMemcpyHostToDevice));
+	CUDA_SAFE_CALL(cudaMemcpy(d_data_negative,data_negative,sizeof(int)*width*height,cudaMemcpyHostToDevice));
+
 	srand( time(NULL));
 
 	GlobalWrapper gw =
-			GC_Init(width, height, true, data_positive, data_negative, 600);
+			GC_Init(width, height, d_data_positive, d_data_negative, 600);
 	free(data_positive);
 	free(data_negative);
 
@@ -70,6 +77,9 @@ int main() {
 	face_in.close();
 	face_out.close();
 	free(label);
+
+	CUDA_SAFE_CALL(cudaFree(d_data_positive));
+	CUDA_SAFE_CALL(cudaFree(d_data_negative));
 
 	GC_End(&gw);
 

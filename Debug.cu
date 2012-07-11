@@ -54,8 +54,15 @@ int main() {
 
 	srand(time(NULL));
 
+	int * d_data_positive, * d_data_negative;
+
+	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_data_positive),sizeof(int)*width*height));
+	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_data_negative),sizeof(int)*width*height));
+	CUDA_SAFE_CALL(cudaMemcpy(d_data_positive,data_positive,sizeof(int)*width*height,cudaMemcpyHostToDevice));
+	CUDA_SAFE_CALL(cudaMemcpy(d_data_negative,data_negative,sizeof(int)*width*height,cudaMemcpyHostToDevice));
+
 	GlobalWrapper gw =
-			GC_Init(width, height, true, data_positive, data_negative, 2);
+			GC_Init(width, height, d_data_positive, d_data_negative, 2);
 
 	int * label = (int *) malloc(sizeof(int) * width * height);
 
@@ -68,6 +75,9 @@ int main() {
 	}
 
 	free(label);
+
+	CUDA_SAFE_CALL(cudaFree(d_data_positive));
+	CUDA_SAFE_CALL(cudaFree(d_data_negative));
 
 	GC_End(&gw);
 
