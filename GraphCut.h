@@ -1,4 +1,3 @@
-
 /*!
  * \file GraphCut.h
  *
@@ -29,7 +28,6 @@
  * of the Graph Cut algorithm.
  */
 //#define DEBUG_MODE
-
 /*! \def SPREAD_ZEROS
  * \brief Makes undecided pixels get the standard value of true or 1.
  *
@@ -123,10 +121,9 @@ struct GlobalWrapper {
 	int * downleft; //!< Original down-left edge.
 	int * downright; //!< Original down-right edge.
 #endif
-	int penalty;  //!< Standard edge value when no per edge value has been given.
-	bool varying_edges;  //!< Whether edge values have been given.
+	int penalty; //!< Standard edge value when no per edge value has been given.
+	bool varying_edges; //!< Whether edge values have been given.
 	KernelWrapper k; //!< The kernel wrapper.
 };
-
 
 #endif /* GRAPHCUT_H_ */
