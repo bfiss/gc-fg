@@ -1,3 +1,6 @@
+/** @file
+ * DataTerm.h
+ */
 #ifndef DATATERM_H
 #define DATATERM_H
 namespace DataTerm
@@ -11,25 +14,26 @@ namespace DataTerm
 	void reset();
 	void selectOnMap(int x, int y, int sigma);
 	void drawSelection(unsigned char* inp, unsigned char* out);
-	void getDataTermsMixture(int* pos, int* neg);
-	void getDataTermsHSV(unsigned char* inp, int* pos);
+	void getDataTermsMixture();
+	void setSigmaGaussian(int sigma);
 
 	// size of image
-	int width, height;
+	int width;		//!<width of image
+	int height;		//!<height of image
 
 	// device data arrays
-	unsigned char* d_selection_map;
-	unsigned char* d_img;
-	float* d_gaussian;
-	float* d_pdf;
-	int *d_pos, *d_neg;
+	unsigned char* d_selection_map;	//!<device pointer for image selection map
+	unsigned char* d_img;			//!<device pointer for image data used for calculations
+	float* d_gaussian;				//!<device pointer for gaussian envelope
+	float* d_pdf;					//!<device pointer for estimated probability density of class membership based on color information
+	int *d_pos; 					//!<device pointer for positive data terms
+	int *d_neg; 					//!<device pointer for negative data terms
 
 	// kernel related
-	dim3 threadsPerBlock;
-	dim3 threadsPerBlock3d;
-	dim3 numBlocks_3d;
-	dim3 numBlocks_img;
-	dim3 numBlocks_pdf;
-	dim3 numBlocks_lin;
+	dim3 threadsPerBlock;			//!< for 2d processing
+	dim3 threadsPerBlock3d;			//!< threads per block for pdf update (256*256*256 data points)
+	dim3 numBlocks_3d;				//!< numblocks for pdf update (256*256*256 data points)
+	dim3 numBlocks_img;				//!< numblocks for image processing (width*height threads)
+	dim3 numBlocks_lin;				//!< numblocks for linear array processing
 };
 #endif

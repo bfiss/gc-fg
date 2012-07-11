@@ -33,4 +33,4 @@ set(CUDA_NVCC_FLAGS "-arch=sm_20")
 CUDA_ADD_EXECUTABLE(app ./Application.cu)
 CUDA_ADD_EXECUTABLE(dbg ./Debug.cu)
 
-CUDA_ADD_EXECUTABLE(presentation ./firstCudaExample.cu)
+CUDA_ADD_EXECUTABLE(presentation ./ComplexApplication.cu)
