@@ -36,4 +36,4 @@ CUDA_ADD_EXECUTABLE(solveMRF ./solveMRF.cu)
 CUDA_ADD_EXECUTABLE(app ./Application.cu)
 CUDA_ADD_EXECUTABLE(dbg ./Debug.cu)
 
-CUDA_ADD_EXECUTABLE(presentation ./ComplexApplication.cu)
+#CUDA_ADD_EXECUTABLE(presentation ./ComplexApplication.cu)

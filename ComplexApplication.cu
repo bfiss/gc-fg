@@ -17,8 +17,8 @@ using namespace std;
 #define VIDEO true
 #define BATCHMODE false
 
-uchar* out_data;
-uchar* inp_data;
+unsigned char* out_data;
+unsigned char* inp_data;
 int* data_pos;
 int* data_neg;
 int* labels;
@@ -37,7 +37,7 @@ GlobalWrapper gw;
 void process();
 void resetSelection();
 void makeSelection(int, int);
-void drawSelection(uchar*);
+void drawSelection(unsigned char*);
 void nextFrame();
 void loadVideo(char*);
 
@@ -144,10 +144,10 @@ void loadImage(char* name)
 	initDisplay(width, height);
 
 	// copy image data to input array
-	out_data = (uchar*)malloc(sizeof(uchar)*width*height*3);
-	inp_data = (uchar*)malloc(sizeof(uchar)*width*height*3);
-	memcpy(inp_data, Image->imageData, sizeof(uchar)*width*height*3);
-	memcpy(out_data, Image->imageData, sizeof(uchar)*width*height*3);
+	out_data = (unsigned char*)malloc(sizeof(unsigned char)*width*height*3);
+	inp_data = (unsigned char*)malloc(sizeof(unsigned char)*width*height*3);
+	memcpy(inp_data, Image->imageData, sizeof(unsigned char)*width*height*3);
+	memcpy(out_data, Image->imageData, sizeof(unsigned char)*width*height*3);
 }
 
 void loadVideo(char* name)
@@ -165,10 +165,10 @@ void loadVideo(char* name)
 	height = Image->height;
 
 	initDisplay(width, height);
-	out_data = (uchar*)malloc(sizeof(uchar)*width*height*3);
-	inp_data = (uchar*)malloc(sizeof(uchar)*width*height*3);
-	memcpy(inp_data, Image->imageData, sizeof(uchar)*width*height*3);
-	memcpy(out_data, Image->imageData, sizeof(uchar)*width*height*3);
+	out_data = (unsigned char*)malloc(sizeof(unsigned char)*width*height*3);
+	inp_data = (unsigned char*)malloc(sizeof(unsigned char)*width*height*3);
+	memcpy(inp_data, Image->imageData, sizeof(unsigned char)*width*height*3);
+	memcpy(out_data, Image->imageData, sizeof(unsigned char)*width*height*3);
 }
 
 void nextFrame()
@@ -179,8 +179,8 @@ void nextFrame()
 		exit(0);
 	}
 	Image = cvRetrieveFrame(input_video);
-	memcpy(inp_data, Image->imageData, sizeof(uchar)*width*height*3);
-	memcpy(out_data, Image->imageData, sizeof(uchar)*width*height*3);
+	memcpy(inp_data, Image->imageData, sizeof(unsigned char)*width*height*3);
+	memcpy(out_data, Image->imageData, sizeof(unsigned char)*width*height*3);
 }
 
 
