@@ -41,7 +41,7 @@ void initDisplay(ImageWrapper* imw)
 	s.width  = imw->width;
 
 	int val0;
-	int val1;
+	//int val1;
 	int val2;
 	cvNamedWindow("win_control", CV_WINDOW_AUTOSIZE);
 	cvNamedWindow("win1", CV_WINDOW_AUTOSIZE);
