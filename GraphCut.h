@@ -19,7 +19,7 @@
  *
  * A defined value that should hold either 4 or 8, corresponding to 4 or 8 adjacency, respectively.
  */
-#define NEIGHBORHOOD 8
+#define NEIGHBORHOOD 4
 
 /*! \def DEBUG_MODE
  * \brief Turns debug and verbose modes on.
@@ -40,12 +40,12 @@
  * \brief Corresponds to the width of a block.
  * Corresponds to the width of a block.
  */
-#define THREADS_X 32
+#define THREADS_X 32 // 32
 /*! \def THREADS_Y
  * \brief Corresponds to the height of a block.
  * Corresponds to the height of a block.
  */
-#define THREADS_Y 8
+#define THREADS_Y 8 // 8
 /*! \def THREAD_COUNT
  * \brief Number of threads per block.
  * Number of threads per block.
@@ -73,6 +73,7 @@ struct NodeWrapper {
 	int * status; //!< Activity status of a node (whether it can push). Used to determine active blocks.
 	int * comp_h; //!< Compressed height information relating neighbors and the node itself. Used in Push.
 	int * comp_n; //!< Compressed neighborhood information. Used in Global Relabel.
+	int * energy_sum;
 };
 
 /*! \struct GraphWrapper
@@ -125,5 +126,41 @@ struct GlobalWrapper {
 	bool varying_edges; //!< Whether edge values have been given.
 	KernelWrapper k; //!< The kernel wrapper.
 };
+
+/*! \def GLOBAL_RELABEL_LOOPS_PER_KERNEL_CALL
+ * \brief How many Global Relabel loops should be executed per kernel call.
+ *
+ * This parameter controls the number of times to execute the main loop
+ * within the Global Relabel kernel.
+ */
+#define GLOBAL_RELABEL_LOOPS_PER_KERNEL_CALL 10 // 10
+
+/*! \def ACTIVITY_CHECK_FREQUENCY
+ * \brief How often inactive blocks are used in the kernels.
+ *
+ * This parameter controls when blocks that were marked as inactive are
+ * used again in Push and Relabel. After this many iterations, all blocks are used again.
+ */
+#define ACTIVITY_CHECK_FREQUENCY 10 // 10
+
+/*! \def GLOBAL_RELABEL_FREQUENCY
+ * \brief How often Global Relabel is run.
+ *
+ * This parameter controls after how many iterations of Push and Relabel the Global Relabel is executed.
+ */
+#define GLOBAL_RELABEL_FREQUENCY 30 // 150
+/*! \def FIRST_GLOBAL_RELABEL
+ * \brief At which iteration Global Relabel is first run.
+ *
+ * This parameter controls at which iteration Global Relabel is first run.
+ */
+#define FIRST_GLOBAL_RELABEL 20 // 5
+
+/*! \def PUSHES_PER_KERNEL
+ * \brief Controls how many pushes are executed in the same kernel.
+ *
+ * This parameter controls the number of pushes executed consecutively inside the same Push kernel.
+ */
+#define PUSHES_PER_KERNEL 4 // 4
 
 #endif /* GRAPHCUT_H_ */

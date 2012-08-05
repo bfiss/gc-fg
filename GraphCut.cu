@@ -61,6 +61,7 @@ static void initialize_graph(GraphWrapper gw) {
 	host_copy.status = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
 	host_copy.comp_h = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
 	host_copy.comp_n = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
+	host_copy.energy_sum = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
 	host_copy.edge_l = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
 	host_copy.edge_r = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
 	host_copy.edge_u = (int *) malloc(sizeof(int)*gw.width_ex*gw.height_ex);
@@ -79,6 +80,7 @@ static void update_graph(GraphWrapper gw) {
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.status,gw.n.status,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.comp_h,gw.n.comp_h,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.comp_n,gw.n.comp_n,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL(cudaMemcpy(host_copy.energy_sum,gw.n.energy_sum,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.edge_l,gw.n.edge_l,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.edge_r,gw.n.edge_r,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL(cudaMemcpy(host_copy.edge_u,gw.n.edge_u,sizeof(int)*gw.width_ex*gw.height_ex,cudaMemcpyDeviceToHost));
@@ -95,38 +97,49 @@ static void print_graph(GraphWrapper gw) {
 	update_graph(gw);
 	for(int i = 0; i < gw.height; ++i) {
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.height[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.height[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.excess[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.excess[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.edge_u[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.edge_u[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.edge_l[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.edge_l[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.edge_d[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.edge_d[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.edge_r[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.edge_r[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.comp_h[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.comp_h[i*gw.width_ex + j]);
 		}
 		printf(" | ");
 		for(int j = 0; j < gw.width; ++j) {
-			printf("%2d ",host_copy.comp_n[i*gw.width_ex + j]);
+			printf("%4d ",host_copy.comp_n[i*gw.width_ex + j]);
+		}
+		printf(" | ");
+		for(int j = 0; j < gw.width; ++j) {
+			printf("%4d ",host_copy.energy_sum[i*gw.width_ex + j]);
 		}
 		printf("\n");
 	}
+	/*printf("Excess:\n");
+	for(int i = 0; i < gw.height; ++i) {
+			for(int j = 0; j < gw.width; ++j) {
+				printf("%2d ",host_copy.excess[i*gw.width_ex + j]);
+			}
+	}
+	printf("----\n");*/
 }
 
 static void free_graph(GraphWrapper gw) {
@@ -135,6 +148,7 @@ static void free_graph(GraphWrapper gw) {
 	free(host_copy.status);
 	free(host_copy.comp_h);
 	free(host_copy.comp_n);
+	free(host_copy.energy_sum);
 	free(host_copy.edge_l);
 	free(host_copy.edge_r);
 	free(host_copy.edge_u);
@@ -181,7 +195,7 @@ GlobalWrapper GC_Init(int width, int height, int * data_positive = NULL,
 	GlobalWrapper ret;
 	KernelWrapper ker;
 
-	assert(THREADS_X == 32 && THREADS_Y == 8);
+	//assert(THREADS_X == 32 && THREADS_Y == 8);
 
 	ker.g.width = width;
 	ker.g.height = height;
@@ -226,6 +240,8 @@ GlobalWrapper GC_Init(int width, int height, int * data_positive = NULL,
 			cudaMalloc((void**)&(ker.g.n.comp_h),sizeof(int)*ker.g.size_ex));
 	CUDA_SAFE_CALL(
 			cudaMalloc((void**)&(ker.g.n.comp_n),sizeof(int)*ker.g.size_ex));
+	CUDA_SAFE_CALL(
+			cudaMalloc((void**)&(ker.g.n.energy_sum),sizeof(int)*ker.g.size_ex));
 	CUDA_SAFE_CALL(
 			cudaMalloc((void**)&(ker.active),sizeof(int)*ret.block_count));
 
@@ -308,35 +324,6 @@ void GC_SetGraph(GlobalWrapper gw) {
 
  }*/
 
-/*! \def ACTIVITY_CHECK_FREQUENCY
- * \brief How often inactive blocks are used in the kernels.
- *
- * This parameter controls when blocks that were marked as inactive are
- * used again in Push and Relabel. After this many iterations, all blocks are used again.
- */
-#define ACTIVITY_CHECK_FREQUENCY 10
-
-/*! \def GLOBAL_RELABEL_FREQUENCY
- * \brief How often Global Relabel is run.
- *
- * This parameter controls after how many iterations of Push and Relabel the Global Relabel is executed.
- */
-#define GLOBAL_RELABEL_FREQUENCY 20 // 150
-/*! \def FIRST_GLOBAL_RELABEL
- * \brief At which iteration Global Relabel is first run.
- *
- * This parameter controls at which iteration Global Relabel is first run.
- */
-#define FIRST_GLOBAL_RELABEL 15
-
-/*! \def PUSHES_PER_RELABEL
- * \brief Controls how many pushes are executed per relabel.
- *
- * This parameter controls the number of pushes executed consecutively inside the same Push kernel.
- * It defines how many pushes happen for every relabel.
- */
-#define PUSHES_PER_RELABEL 4
-
 //! Runs Graph Cut on given data
 /*!
  * This function expects a Global Wrapper \a gw properly initialized
@@ -352,6 +339,10 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 	initialize_graph(gw.k.g);
 #endif
 
+	int * h_curr_energy = (int *) malloc(8 * sizeof(int));
+	int * d_curr_energy;
+	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_curr_energy),8*sizeof(int)));
+
 	int * zero_arr = (int *) malloc(8 * sizeof(int));
 	zero_arr[0] = 0;
 	int * h_alive = (int *) malloc(8 * sizeof(int));
@@ -362,9 +353,9 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 
 	//const char * error;
 
-	int * d_heights;
+	/*int * d_heights;
 	CUDA_SAFE_CALL(
-			cudaMalloc((void**)&(d_heights),(gw.k.g.size_ex+10)*sizeof(int)));
+			cudaMalloc((void**)&(d_heights),(gw.k.g.size_ex+10)*sizeof(int)));*/
 
 	//bool dbg_verify_no_more_pushes = false;
 
@@ -374,6 +365,8 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 	print_graph(gw.k.g);
 #endif
 
+	unsigned int total_global_relabels = 0;
+	unsigned int total_global_relabel_iterations = 0;
 	unsigned int timer = 0;
 	CUT_SAFE_CALL(cutCreateTimer(&timer));
 	CUT_SAFE_CALL(cutStartTimer(timer));
@@ -387,7 +380,7 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 			CUDA_SAFE_CALL(
 					cudaMemcpy(d_alive,zero_arr,8*sizeof(int),cudaMemcpyHostToDevice));
 
-		Relabel<<<grid,block>>>(gw.k, skip);
+		Relabel<<<grid,block>>>(gw.k, skip, d_alive);
 		/*cutilCheckMsg("Relabel kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
 		 printf("%s\nwith %d iters.\n", error,counter);
 		 error = cudaGetErrorString(cudaThreadSynchronize());
@@ -399,8 +392,8 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 		printf("After Relabel:\n");
 		print_graph(gw.k.g);
 #endif
-
-		Push<<<grid,block>>>(gw.k, PUSHES_PER_RELABEL, skip, d_alive);
+		Push<<<grid,block>>>(gw.k, skip, d_alive);
+		//WavePush<<<grid,block>>>(gw.k, skip, d_alive);
 		/*cutilCheckMsg("Push kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
 		 printf("%s\nwith %d iters.\n", error,counter);
 		 error = cudaGetErrorString(cudaThreadSynchronize());
@@ -416,20 +409,41 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 		if (!skip)
 			CUDA_SAFE_CALL(
 					cudaMemcpy(h_alive,d_alive,8*sizeof(int),cudaMemcpyDeviceToHost));
+		//printf("Number of blocks that entered with skip: %d (out of %d).\n",h_alive[0],gw.k.block_x*gw.block_y);
 
 		if (!skip) {
-UpdateActivity		<<<grid,block>>>(gw.k.g.n.status, gw.k.active, gw.k.block_x, gw.k.g.width_ex);
-		/*cutilCheckMsg("UpdateActivity kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
-		 printf("%s\nwith %d iters.\n", error,counter);
-		 error = cudaGetErrorString(cudaThreadSynchronize());
-		 printf("%s\n", error);*/
-	}
-	//CUDA_SAFE_CALL(cudaThreadSynchronize());
+			UpdateActivity<<<grid,block>>>(gw.k.g.n.status, gw.k.active, gw.k.block_x, gw.k.g.width_ex);
+			/*cutilCheckMsg("UpdateActivity kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
+			 printf("%s\nwith %d iters.\n", error,counter);
+			 error = cudaGetErrorString(cudaThreadSynchronize());
+			 printf("%s\n", error);*/
+		}
+		//CUDA_SAFE_CALL(cudaThreadSynchronize());
 
 		if (!h_alive[0]) {
 			//dbg_verify_no_more_pushes = true;
+
+			int odd = 0;
+			for (int stride = gw.k.g.size_ex;;
+					odd = stride % 2, stride = (stride + 1) / 2) {
+				if (stride == 1)
+					odd = 0;
+				EnergyLevel<<<grid,block>>>(gw.k, stride, odd, d_curr_energy);
+				/*cutilCheckMsg("EnergyLevel kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
+				 printf("%s\nwith %d iters.\n", error,counter);
+				 error = cudaGetErrorString(cudaThreadSynchronize());
+				 printf("%s\n", error);/*/
+				if (stride == 1) {
+					CUDA_SAFE_CALL(
+							cudaMemcpy(h_curr_energy,d_curr_energy,8*sizeof(int),cudaMemcpyDeviceToHost));
+					break;
+				}
+			}
+			printf("Final energy level: %d\n", h_curr_energy[0]);
+
 			break;
 		}
+
 		if (!((counter - FIRST_GLOBAL_RELABEL) % GLOBAL_RELABEL_FREQUENCY)) {
 InitGlobalRelabel<<<grid,block>>>(gw.k);
 						cutilCheckMsg("InitGlobalRelabel kernel launch failure");
@@ -443,11 +457,13 @@ GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
 				//if(!(iter_gr % GLOBAL_RELABEL_CHECK_FREQUENCY))
 				CUDA_SAFE_CALL(
 						cudaMemcpy(h_alive,d_alive,8*sizeof(int),cudaMemcpyDeviceToHost));
-				if (!h_alive[0])
+				if (!h_alive[0] /*&& (iter_gr+5) % 30 == 0*/)
 					break;
 				iter_gr++;
 			}
 			printf("%d iterations inside global relabel\n", iter_gr);
+			total_global_relabel_iterations += iter_gr;
+			++total_global_relabels;
 			h_alive[0] = 1;
 #ifdef DEBUG_MODE
 			CUDA_SAFE_CALL(cudaThreadSynchronize());
@@ -468,9 +484,17 @@ GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
 	CUT_SAFE_CALL(cutStopTimer(timer));
 	printf("Graph Cut used %d iterations and %f milliseconds.\n", counter,
 			cutGetTimerValue(timer));
+	printf("Resulting in %f milliseconds per iteration.\n",
+			cutGetTimerValue(timer) / counter);
+	printf("Or %f only for push and relabel.\n",
+			(cutGetTimerValue(timer) - total_global_relabel_iterations * 1.57
+					- total_global_relabels * 2.53) / counter);
 	CUT_SAFE_CALL(cutDeleteTimer(timer));
 
-	CUDA_SAFE_CALL(cudaFree(d_heights));
+	//CUDA_SAFE_CALL(cudaFree(d_heights));
+
+	CUDA_SAFE_CALL(cudaFree(d_curr_energy));
+	free(h_curr_energy);
 
 	int * d_label;
 	CUDA_SAFE_CALL(
@@ -489,7 +513,7 @@ GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
 				cutilCheckMsg("SpreadLabels kernel launch failure");
 		CUDA_SAFE_CALL(
 				cudaMemcpy(h_alive,d_alive,8*sizeof(int),cudaMemcpyDeviceToHost));
-		if (!h_alive[0])
+		if (!h_alive[0] /*&& spreadLabelsCounter >= 12*/)
 			break;
 	}
 	printf("%d iterations inside Spreadlabels\n", spreadLabelsCounter);
@@ -525,6 +549,7 @@ void GC_End(GlobalWrapper * gw) {
 	CUDA_SAFE_CALL(cudaFree(gw->k.g.n.status));
 	CUDA_SAFE_CALL(cudaFree(gw->k.g.n.comp_h));
 	CUDA_SAFE_CALL(cudaFree(gw->k.g.n.comp_n));
+	CUDA_SAFE_CALL(cudaFree(gw->k.g.n.energy_sum));
 	CUDA_SAFE_CALL(cudaFree(gw->k.active));
 
 	/*CUDA_SAFE_CALL(cudaFree(gw->data_positive));

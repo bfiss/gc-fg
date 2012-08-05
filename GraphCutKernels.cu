@@ -18,8 +18,8 @@
 #define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		cap = edge[thread_id];                                                                       \
-		if(cap > 0 && excess > 0 && /*local_height[local_idx] == */                                      \
-           /*local_height[local_idx + (x_gap) + (y_gap) * 34] + 1*/ (comp_h&(1<<(comp_h_idx)))  ) {                                   \
+		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
+           local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {          \
 			flow = excess > cap ? cap : excess;                                                      \
 			excess -= flow;                                                                          \
 			edge[thread_id] -= flow;                                                                 \
@@ -39,15 +39,15 @@
  * \brief Internal macro used to make a push in a certain direction with a certain node.
  *
  * This version does not use atomic functions, but synchronizes. An attempt to improve the wave operator
- * by Timo Stich, but that is not very succesful, perhaps due to too frequent synchronization.
+ * by Timo Stich, but that is not very successful, perhaps due to too frequent synchronization.
  */
 #define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
 	do{                                                                                              \
 		excess = local_excess[local_idx];     \
 		cap = edge[thread_id];                                                                       \
 		bool changed = false; \
-		if(cap > 0 && excess > 0 && /*local_height[local_idx] == */                                      \
-           /*local_height[local_idx + (x_gap) + (y_gap) * 34] + 1*/ (comp_h&(1<<(comp_h_idx)))  ) {                                   \
+		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
+           local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {                                   \
 			flow = excess > cap ? cap : excess;                                                      \
 			/*excess -= flow;                                                                          \*/ \
 			edge[thread_id] -= flow;                                                                 \
@@ -58,7 +58,7 @@
 			did_something = changed = true;                                                                    \
 		}  \
 		__syncthreads(); \
-		changed ? local_excess[local_idx + (x_gap) + (y_gap) * 34] += flow : 0; \
+		changed ? local_excess[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] += flow : 0; \
 		__syncthreads(); \
 	} while(0)
 
@@ -66,6 +66,37 @@
  * \brief Short version for DO_PUSH_C_WAVE macro.
  */
 #define DO_PUSH_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
+
+/*! \def DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)
+ * \brief Internal macro used to make a push in a certain direction with a certain node.
+ *
+ * This version uses atomic functions and shared memory for flow. An attempt to improve the wave operator
+ * by Timo Stich.
+ */
+#define DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+	do{                                                                                              \
+		excess = local_excess[local_idx];     \
+		__syncthreads(); /* only for determinism */ \
+		cap = edge[thread_id];                                                                       \
+		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
+           local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {                                   \
+			flow = excess > cap ? cap : excess;                                                      \
+			/*excess -= flow;                                                                          \*/ \
+			edge[thread_id] -= flow;                                                                 \
+			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
+			atomicSub(&local_excess[local_idx], flow);                                                \
+			atomicAdd(&local_excess[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)], flow);             \
+			did_something = true;                                                                    \
+		}  \
+		__syncthreads(); \
+	} while(0)
+
+/*! \def DO_PUSH_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx)
+ * \brief Short version for DO_PUSH_C_WAVE2 macro.
+ */
+#define DO_PUSH_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
+
+
 
 //! Initializes the internal structure of Graph Cut.
 /*!
@@ -102,7 +133,7 @@ __global__ void InitGraph(KernelWrapper k, int * data_positive,
 #endif
 	k.g.n.height[thread_id] = going >= coming ? 1 : 2;
 	k.g.n.excess[thread_id] = coming - going;
-	k.g.n.status[thread_id] = going >= coming ? 0 : 1;
+	k.g.n.status[thread_id] = inside_area ? (going >= coming ? 2 : 1) : 0;
 
 	x == 1 ? k.g.n.edge_l[thread_id] = 0 : 0;
 	x == k.g.width - 2 ? k.g.n.edge_r[thread_id] = 0 : 0;
@@ -114,6 +145,10 @@ __global__ void InitGraph(KernelWrapper k, int * data_positive,
 	y == 1 ? k.g.n.edge_ul[thread_id] = k.g.n.edge_ur[thread_id] = 0 : 0;
 	y == k.g.height - 2 ? k.g.n.edge_dr[thread_id] = k.g.n.edge_dl[thread_id] = 0 : 0;
 #endif
+
+	k.g.n.energy_sum[thread_id] = 0;
+	k.g.n.comp_h[thread_id] = 0;
+	k.g.n.comp_n[thread_id] = 0;
 }
 
 //! Initializes the internal structure of Graph Cut.
@@ -155,7 +190,7 @@ __global__ void InitGraphVarEdges(KernelWrapper k, int * data_positive,
 #endif
 	k.g.n.height[thread_id] = going >= coming ? 1 : 2;
 	k.g.n.excess[thread_id] = coming - going;
-	k.g.n.status[thread_id] = going >= coming ? 0 : 1;
+	k.g.n.status[thread_id] = inside_area ? (going >= coming ? 2 : 1) : 0;
 
 	x == 1 ? k.g.n.edge_l[thread_id] = 0 : 0;
 	x == k.g.width - 2 ? k.g.n.edge_r[thread_id] = 0 : 0;
@@ -167,6 +202,10 @@ __global__ void InitGraphVarEdges(KernelWrapper k, int * data_positive,
 	y == 1 ? k.g.n.edge_ul[thread_id] = k.g.n.edge_ur[thread_id] = 0 : 0;
 	y == k.g.height - 2 ? k.g.n.edge_dr[thread_id] = k.g.n.edge_dl[thread_id] = 0 : 0;
 #endif
+
+	k.g.n.energy_sum[thread_id] = 0;
+	k.g.n.comp_h[thread_id] = 0;
+	k.g.n.comp_n[thread_id] = 0;
 }
 
 #ifdef SPREAD_ZEROS
@@ -223,7 +262,7 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	int thread_id = x + y * k.g.width_ex;
 	int label_id = x + y * k.g.width;
-	int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+	int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
 	int comp_n = k.g.n.comp_n[thread_id];
 
@@ -234,24 +273,24 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 
 		local_label[local_idx] = label[label_id];
 
-		threadIdx.x == 31 && x < k.g.width - 1 ?
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width - 1 ?
 				local_label[local_idx + 1] = label[label_id + 1] : 0;
 		threadIdx.x == 0 && x > 0 ?
 				local_label[local_idx - 1] = label[label_id - 1] : 0;
-		threadIdx.y == 7 && y < k.g.height - 1 ?
-				local_label[local_idx + 34] = label[label_id + k.g.width] : 0;
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height - 1 ?
+				local_label[local_idx + (THREADS_X + 2)] = label[label_id + k.g.width] : 0;
 		threadIdx.y == 0 && y > 0 ?
-				local_label[local_idx - 34] = label[label_id - k.g.width] : 0;
+				local_label[local_idx - (THREADS_X + 2)] = label[label_id - k.g.width] : 0;
 
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && threadIdx.y == 0 &&
-		x > 0 && y > 0 ? local_label[local_idx - 35] = label[label_id - 1 - k.g.width] : 0;
-		threadIdx.x == 31 && threadIdx.y == 0 &&
-		x < k.g.width - 1 && y > 0 ? local_label[local_idx - 33] = label[label_id + 1 - k.g.width] : 0;
-		threadIdx.x == 0 && threadIdx.y == 7 &&
-		x > 0 && y < k.g.height - 1 ? local_label[local_idx + 33] = label[label_id - 1 + k.g.width] : 0;
-		threadIdx.x == 31 && threadIdx.y == 7 &&
-		x < k.g.width - 1 && y < k.g.height - 1 ? local_label[local_idx + 35] = label[label_id + 1 + k.g.width] : 0;
+		x > 0 && y > 0 ? local_label[local_idx - (THREADS_X + 3)] = label[label_id - 1 - k.g.width] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == 0 &&
+		x < k.g.width - 1 && y > 0 ? local_label[local_idx - (THREADS_X + 1)] = label[label_id + 1 - k.g.width] : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) &&
+		x > 0 && y < k.g.height - 1 ? local_label[local_idx + (THREADS_X + 1)] = label[label_id - 1 + k.g.width] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == (THREADS_Y - 1) &&
+		x < k.g.width - 1 && y < k.g.height - 1 ? local_label[local_idx + (THREADS_X + 3)] = label[label_id + 1 + k.g.width] : 0;
 #endif
 	}
 
@@ -260,38 +299,38 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	int curr_label = local_label[local_idx];
 	int orig_label = curr_label;
 
-	int repetitions = 10;
+	int repetitions = GLOBAL_RELABEL_LOOPS_PER_KERNEL_CALL;
 
 	do {
 
 #ifdef SPREAD_ZEROS
 		if (curr_label && x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
 
-			curr_label = ( (comp_n & (1<<0)) || local_label[local_idx+34]) && curr_label;
-			curr_label = ( (comp_n & (1<<1)) || local_label[local_idx-34]) && curr_label;
+			curr_label = ( (comp_n & (1<<0)) || local_label[local_idx+(THREADS_X + 2)]) && curr_label;
+			curr_label = ( (comp_n & (1<<1)) || local_label[local_idx-(THREADS_X + 2)]) && curr_label;
 			curr_label = ( (comp_n & (1<<2)) || local_label[local_idx+1]) && curr_label;
 			curr_label = ( (comp_n & (1<<3)) || local_label[local_idx-1]) && curr_label;
 #if NEIGHBORHOOD == 8
-			curr_label = ( (comp_n & (1<<4)) || local_label[local_idx+35]) && curr_label;
-			curr_label = ( (comp_n & (1<<5)) || local_label[local_idx+33]) && curr_label;
-			curr_label = ( (comp_n & (1<<6)) || local_label[local_idx-33]) && curr_label;
-			curr_label = ( (comp_n & (1<<7)) || local_label[local_idx-35]) && curr_label;
+			curr_label = ( (comp_n & (1<<4)) || local_label[local_idx+(THREADS_X + 3)]) && curr_label;
+			curr_label = ( (comp_n & (1<<5)) || local_label[local_idx+(THREADS_X + 1)]) && curr_label;
+			curr_label = ( (comp_n & (1<<6)) || local_label[local_idx-(THREADS_X + 1)]) && curr_label;
+			curr_label = ( (comp_n & (1<<7)) || local_label[local_idx-(THREADS_X + 3)]) && curr_label;
 #endif
 #else
 		if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
 			curr_label = k.g.n.edge_u[thread_id + k.g.width_ex]
-					&& local_label[local_idx + 34] || curr_label;
+					&& local_label[local_idx + (THREADS_X + 2)] || curr_label;
 			curr_label = k.g.n.edge_d[thread_id - k.g.width_ex]
-					&& local_label[local_idx - 34] || curr_label;
+					&& local_label[local_idx - (THREADS_X + 2)] || curr_label;
 			curr_label = k.g.n.edge_l[thread_id + 1]
 					&& local_label[local_idx + 1] || curr_label;
 			curr_label = k.g.n.edge_r[thread_id - 1]
 					&& local_label[local_idx - 1] || curr_label;
 #if NEIGHBORHOOD == 8
-			curr_label = k.g.n.edge_ul[thread_id+k.g.width_ex+1] && local_label[local_idx+35] || curr_label;
-			curr_label = k.g.n.edge_ur[thread_id+k.g.width_ex-1] && local_label[local_idx+33] || curr_label;
-			curr_label = k.g.n.edge_dl[thread_id-k.g.width_ex+1] && local_label[local_idx-33] || curr_label;
-			curr_label = k.g.n.edge_dr[thread_id-k.g.width_ex-1] && local_label[local_idx-35] || curr_label;
+			curr_label = k.g.n.edge_ul[thread_id+k.g.width_ex+1] && local_label[local_idx+(THREADS_X + 3)] || curr_label;
+			curr_label = k.g.n.edge_ur[thread_id+k.g.width_ex-1] && local_label[local_idx+(THREADS_X + 1)] || curr_label;
+			curr_label = k.g.n.edge_dl[thread_id-k.g.width_ex+1] && local_label[local_idx-(THREADS_X + 1)] || curr_label;
+			curr_label = k.g.n.edge_dr[thread_id-k.g.width_ex-1] && local_label[local_idx-(THREADS_X + 3)] || curr_label;
 #endif
 #endif
 			curr_label != orig_label ? label[label_id] = curr_label : 0;
@@ -306,67 +345,58 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 //! Performs the Push operation
 /*!
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
- * depending on the parameter PUSHES_PER_RELABEL.
+ * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
-	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
-		int x = blockIdx.x * blockDim.x + threadIdx.x;
-		int y = blockIdx.y * blockDim.y + threadIdx.y;
-		int thread_id = x + y * k.g.width_ex;
+__global__ void Push(KernelWrapper k, int skip, int * alive) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int thread_id = x + y * k.g.width_ex;
 
-		int comp_h = k.g.n.comp_h[thread_id];
+	if (__syncthreads_or(k.g.n.status[thread_id] == 1)) {
+		//int comp_h = k.g.n.comp_h[thread_id];
 
-		//int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
-		/*__shared__ int local_height[356];
+		__shared__
+		int local_height[356];
 
-		 local_height[local_idx] = k.g.n.height[thread_id];
+		local_height[local_idx] = k.g.n.height[thread_id];
 
-		 threadIdx.x == 31 && x < k.g.width_ex - 1 ? local_height[local_idx + 1]
-		 = k.g.n.height[thread_id + 1] : 0;
-		 threadIdx.x == 0 && x > 0 ? local_height[local_idx - 1]
-		 = k.g.n.height[thread_id - 1] : 0;
-		 threadIdx.y == 7 && y < k.g.height_ex - 1 ? local_height[local_idx + 34]
-		 = k.g.n.height[thread_id + k.g.width_ex] : 0;
-		 threadIdx.y == 0 && y > 0 ? local_height[local_idx - 34]
-		 = k.g.n.height[thread_id - k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 ?
+				local_height[local_idx + 1] = k.g.n.height[thread_id + 1] : 0;
+		threadIdx.x == 0 && x > 0 ?
+				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
+				local_height[local_idx + (THREADS_X + 2)] =
+						k.g.n.height[thread_id + k.g.width_ex] :
+				0;
+		threadIdx.y == 0 && y > 0 ?
+				local_height[local_idx - (THREADS_X + 2)] =
+						k.g.n.height[thread_id - k.g.width_ex] :
+				0;
 
-		 #if NEIGHBORHOOD == 8
-		 threadIdx.x == 0 && threadIdx.y == 0 &&
-		 x > 0 && y > 0 ? local_height[local_idx - 35] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
-		 threadIdx.x == 31 && threadIdx.y == 0 &&
-		 x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - 33] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
-		 threadIdx.x == 0 && threadIdx.y == 7 &&
-		 x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + 33] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
-		 threadIdx.x == 31 && threadIdx.y == 7 &&
-		 x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
-		 #endif*/
-
-		/*__shared__ int local_excess[356];
-
-		 local_excess[local_idx] = k.g.n.excess[thread_id];
-
-		 threadIdx.x == 31 && x < k.g.width_ex - 1  ? local_excess[local_idx +  1] = 0 : 0;
-		 threadIdx.x == 0  && x > 0                 ? local_excess[local_idx -  1] = 0 : 0;
-		 threadIdx.y == 7  && y < k.g.height_ex - 1 ? local_excess[local_idx + 34] = 0 : 0;
-		 threadIdx.y == 0  && y > 0                 ? local_excess[local_idx - 34] = 0 : 0;
-
-		 #if NEIGHBORHOOD == 8
-		 threadIdx.x == 0 && threadIdx.y == 0 && x > 0                && y > 0                 ? local_excess[local_idx -35] = 0 : 0;
-		 threadIdx.x == 31&& threadIdx.y == 0 && x < k.g.width_ex - 1 && y > 0                 ? local_excess[local_idx -33] = 0 : 0;
-		 threadIdx.x == 0 && threadIdx.y == 7 && x > 0                && y < k.g.height_ex - 1 ? local_excess[local_idx +33] = 0 : 0;
-		 threadIdx.x == 31&& threadIdx.y == 7 && x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_excess[local_idx +35] = 0 : 0;
-		 #endif*/
-
-		__syncthreads();
+#if NEIGHBORHOOD == 8
+		threadIdx.x == 0 && threadIdx.y == 0 &&
+		x > 0 && y > 0 ? local_height[local_idx - (THREADS_X + 3)] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == 0 &&
+		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - (THREADS_X + 1)] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) &&
+		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 1)] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == (THREADS_Y - 1) &&
+		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 3)] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
+#endif
 
 		bool did_something = false;
 
 		//if (k.g.n.status[thread_id]) {
-		int excess = k.g.n.excess[thread_id];
+		int excess /*= k.g.n.excess[thread_id]*/;
 		int cap;
 		int flow;
-		do {
+		for(int i = 0 ; i < PUSHES_PER_KERNEL ; ++i) {
+			/*__threadfence_block();
+			__syncthreads();*/
+			excess = k.g.n.excess[thread_id];
+
 			DO_PUSH(k.g.n.edge_l, k.g.n.edge_r, 1, 0, 0, 0, 0);
 			DO_PUSH(k.g.n.edge_r, k.g.n.edge_l, 0, 1, 0, 0, 1);
 			DO_PUSH(k.g.n.edge_u, k.g.n.edge_d, 0, 0, 1, 0, 2);
@@ -377,9 +407,7 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 			DO_PUSH(k.g.n.edge_ur,k.g.n.edge_dl,0,1,1,0,6);
 			DO_PUSH(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
 #endif
-
-			excess = k.g.n.excess[thread_id];
-		} while (--iter);
+		}
 		//}
 		if (!skip && did_something)
 			alive[0] = 1;
@@ -389,72 +417,82 @@ __global__ void Push(KernelWrapper k, int iter, int skip, int * alive) {
 //! Performs the Push operation using the wave-like DO_PUSH macro.
 /*!
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
- * depending on the parameter PUSHES_PER_RELABEL.
+ * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrapper k, const int skip, int * alive) {
 	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
-		int x = blockIdx.x * blockDim.x + threadIdx.x;
-		int y = blockIdx.y * blockDim.y + threadIdx.y;
-		int thread_id = x + y * k.g.width_ex;
+		const int x = blockIdx.x * blockDim.x + threadIdx.x;
+		const int y = blockIdx.y * blockDim.y + threadIdx.y;
+		const int thread_id = x + y * k.g.width_ex;
 
-		int comp_h = k.g.n.comp_h[thread_id];
+		/*if(skip && !threadIdx.x && !threadIdx.y)
+			atomicAdd(&alive[0],1);*/
 
-		int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+		//const int comp_h = k.g.n.comp_h[thread_id];
 
-		/*__shared__ int local_height[356];
+		const int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
-		 local_height[local_idx] = k.g.n.height[thread_id];
+		__shared__
+		int local_height[356];
 
-		 threadIdx.x == 31 && x < k.g.width_ex - 1 ? local_height[local_idx + 1]
-		 = k.g.n.height[thread_id + 1] : 0;
-		 threadIdx.x == 0 && x > 0 ? local_height[local_idx - 1]
-		 = k.g.n.height[thread_id - 1] : 0;
-		 threadIdx.y == 7 && y < k.g.height_ex - 1 ? local_height[local_idx + 34]
-		 = k.g.n.height[thread_id + k.g.width_ex] : 0;
-		 threadIdx.y == 0 && y > 0 ? local_height[local_idx - 34]
-		 = k.g.n.height[thread_id - k.g.width_ex] : 0;
+		local_height[local_idx] = k.g.n.height[thread_id];
 
-		 #if NEIGHBORHOOD == 8
-		 threadIdx.x == 0 && threadIdx.y == 0 &&
-		 x > 0 && y > 0 ? local_height[local_idx - 35] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
-		 threadIdx.x == 31 && threadIdx.y == 0 &&
-		 x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - 33] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
-		 threadIdx.x == 0 && threadIdx.y == 7 &&
-		 x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + 33] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
-		 threadIdx.x == 31 && threadIdx.y == 7 &&
-		 x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
-		 #endif*/
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 ?
+				local_height[local_idx + 1] = k.g.n.height[thread_id + 1] : 0;
+		threadIdx.x == 0 && x > 0 ?
+				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
+				local_height[local_idx + (THREADS_X + 2)] =
+						k.g.n.height[thread_id + k.g.width_ex] :
+				0;
+		threadIdx.y == 0 && y > 0 ?
+				local_height[local_idx - (THREADS_X + 2)] =
+						k.g.n.height[thread_id - k.g.width_ex] :
+				0;
+
+#if NEIGHBORHOOD == 8
+		threadIdx.x == 0 && threadIdx.y == 0 &&
+		x > 0 && y > 0 ? local_height[local_idx - (THREADS_X + 3)] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == 0 &&
+		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - (THREADS_X + 1)] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) &&
+		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 1)] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == (THREADS_Y - 1) &&
+		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 3)] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
+#endif
 
 		__shared__
 		int local_excess[356];
 
 		local_excess[local_idx] = k.g.n.excess[thread_id];
 
-		threadIdx.x == 31 && x < k.g.width_ex - 1 ?
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 ?
 				local_excess[local_idx + 1] = 0 : 0;
 		threadIdx.x == 0 && x > 0 ? local_excess[local_idx - 1] = 0 : 0;
-		threadIdx.y == 7 && y < k.g.height_ex - 1 ?
-				local_excess[local_idx + 34] = 0 : 0;
-		threadIdx.y == 0 && y > 0 ? local_excess[local_idx - 34] = 0 : 0;
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
+				local_excess[local_idx + (THREADS_X + 2)] = 0 : 0;
+		threadIdx.y == 0 && y > 0 ? local_excess[local_idx - (THREADS_X + 2)] = 0 : 0;
 
 #if NEIGHBORHOOD == 8
-		threadIdx.x == 0 && threadIdx.y == 0 && x > 0 && y > 0 ? local_excess[local_idx -35] = 0 : 0;
-		threadIdx.x == 31&& threadIdx.y == 0 && x < k.g.width_ex - 1 && y > 0 ? local_excess[local_idx -33] = 0 : 0;
-		threadIdx.x == 0 && threadIdx.y == 7 && x > 0 && y < k.g.height_ex - 1 ? local_excess[local_idx +33] = 0 : 0;
-		threadIdx.x == 31&& threadIdx.y == 7 && x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_excess[local_idx +35] = 0 : 0;
+		threadIdx.x == 0 && threadIdx.y == 0 && x > 0 && y > 0 ? local_excess[local_idx -(THREADS_X + 3)] = 0 : 0;
+		threadIdx.x == (THREADS_X - 1)&& threadIdx.y == 0 && x < k.g.width_ex - 1 && y > 0 ? local_excess[local_idx -(THREADS_X + 1)] = 0 : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) && x > 0 && y < k.g.height_ex - 1 ? local_excess[local_idx +(THREADS_X + 1)] = 0 : 0;
+		threadIdx.x == (THREADS_X - 1)&& threadIdx.y == (THREADS_Y - 1) && x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_excess[local_idx +(THREADS_X + 3)] = 0 : 0;
 #endif
 
 		__syncthreads();
 
 		bool did_something = false;
 
-		int original_excess = local_excess[local_idx];
+		const int original_excess = local_excess[local_idx];
+
+		__syncthreads(); // only for determinism
 
 		//if (k.g.n.status[thread_id]) {
 		int excess;
 		int cap;
 		int flow;
-		do {
+		for(int i = 0 ; i < PUSHES_PER_KERNEL ; ++i) {
 
 			DO_PUSH_WAVE(k.g.n.edge_l, k.g.n.edge_r, 1, 0, 0, 0, 0);
 			DO_PUSH_WAVE(k.g.n.edge_r, k.g.n.edge_l, 0, 1, 0, 0, 1);
@@ -468,10 +506,10 @@ __global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
 #endif
 
 			//excess = k.g.n.excess[thread_id];
-		} while (--iter);
+		}
 		excess = local_excess[local_idx];
 
-		/*if(threadIdx.x > 0 && threadIdx.x < 31 && threadIdx.y > 0 && threadIdx.y < 7)
+		/*if(threadIdx.x > 0 && threadIdx.x < (THREADS_X - 1) && threadIdx.y > 0 && threadIdx.y < (THREADS_Y - 1))
 		 excess - original_excess ? k.g.n.excess[thread_id] = excess : 0;
 		 else*/
 		excess - original_excess ?
@@ -482,33 +520,33 @@ __global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
 				atomicAdd(&k.g.n.excess[thread_id - 1],
 						local_excess[local_idx - 1]) :
 				0;
-		threadIdx.y == 0 && y > 0 && local_excess[local_idx - 34] ?
+		threadIdx.y == 0 && y > 0 && local_excess[local_idx - (THREADS_X + 2)] ?
 				atomicAdd(&k.g.n.excess[thread_id - k.g.width_ex],
-						local_excess[local_idx - 34]) :
+						local_excess[local_idx - (THREADS_X + 2)]) :
 				0;
-		threadIdx.x == 31 && x < k.g.width_ex - 1
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1
 				&& local_excess[local_idx + 1] ?
 				atomicAdd(&k.g.n.excess[thread_id + 1],
 						local_excess[local_idx + 1]) :
 				0;
-		threadIdx.y == 7 && y < k.g.height_ex - 1
-				&& local_excess[local_idx + 34] ?
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1
+				&& local_excess[local_idx + (THREADS_X + 2)] ?
 				atomicAdd(&k.g.n.excess[thread_id + k.g.width_ex],
-						local_excess[local_idx + 34]) :
+						local_excess[local_idx + (THREADS_X + 2)]) :
 				0;
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && x > 0 &&
 		threadIdx.y == 0 && y > 0 &&
-		local_excess[local_idx - 35] ? atomicAdd(&k.g.n.excess[thread_id - 35], local_excess[local_idx - 1 - k.g.width_ex]) : 0;
-		threadIdx.x == 31 && x < k.g.width_ex - 1 &&
+		local_excess[local_idx - (THREADS_X + 3)] ? atomicAdd(&k.g.n.excess[thread_id - (THREADS_X + 3)], local_excess[local_idx - 1 - k.g.width_ex]) : 0;
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 &&
 		threadIdx.y == 0 && y > 0 &&
-		local_excess[local_idx - 33] ? atomicAdd(&k.g.n.excess[thread_id - 33], local_excess[local_idx + 1 - k.g.width_ex]) : 0;
+		local_excess[local_idx - (THREADS_X + 1)] ? atomicAdd(&k.g.n.excess[thread_id - (THREADS_X + 1)], local_excess[local_idx + 1 - k.g.width_ex]) : 0;
 		threadIdx.x == 0 && x > 0 &&
-		threadIdx.y == 7 && y < k.g.height_ex - 1 &&
-		local_excess[local_idx + 33] ? atomicAdd(&k.g.n.excess[thread_id + 33], local_excess[local_idx - 1 + k.g.width_ex]) : 0;
-		threadIdx.x == 31 && x < k.g.width_ex - 1 &&
-		threadIdx.y == 7 && y < k.g.height_ex - 1 &&
-		local_excess[local_idx + 35] ? atomicAdd(&k.g.n.excess[thread_id + 35], local_excess[local_idx + 1 + k.g.width_ex]) : 0;
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 &&
+		local_excess[local_idx + (THREADS_X + 1)] ? atomicAdd(&k.g.n.excess[thread_id + (THREADS_X + 1)], local_excess[local_idx - 1 + k.g.width_ex]) : 0;
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 &&
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 &&
+		local_excess[local_idx + (THREADS_X + 3)] ? atomicAdd(&k.g.n.excess[thread_id + (THREADS_X + 3)], local_excess[local_idx + 1 + k.g.width_ex]) : 0;
 #endif
 		//}
 		if (!skip && did_something)
@@ -532,88 +570,101 @@ __global__ void WavePush(KernelWrapper k, int iter, int skip, int * alive) {
 /*!
  * This is one of the classical operations from Push-Relabel algorithms. Relabel is applied to every node once.
  */
-__global__ void Relabel(KernelWrapper k, int skip) {
-	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
-		int x = blockIdx.x * blockDim.x + threadIdx.x;
-		int y = blockIdx.y * blockDim.y + threadIdx.y;
-		int thread_id = x + y * k.g.width_ex;
+__global__ void Relabel(KernelWrapper k, int skip, int * alive) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int thread_id = x + y * k.g.width_ex;
+
+	int status = k.g.n.status[thread_id];
+	if (!skip || __syncthreads_or(status == 1)) {
 
 		__shared__
 		int local_height[356];
 
-		int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
 		local_height[local_idx] = k.g.n.height[thread_id];
 
-		threadIdx.x == 31 && x < k.g.width_ex - 1 ?
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 ?
 				local_height[local_idx + 1] = k.g.n.height[thread_id + 1] : 0;
 		threadIdx.x == 0 && x > 0 ?
 				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
-		threadIdx.y == 7 && y < k.g.height_ex - 1 ?
-				local_height[local_idx + 34] = k.g.n.height[thread_id
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
+				local_height[local_idx + (THREADS_X + 2)] = k.g.n.height[thread_id
 						+ k.g.width_ex] :
 				0;
 		threadIdx.y == 0 && y > 0 ?
-				local_height[local_idx - 34] = k.g.n.height[thread_id
+				local_height[local_idx - (THREADS_X + 2)] = k.g.n.height[thread_id
 						- k.g.width_ex] :
 				0;
 
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && threadIdx.y == 0 &&
-		x > 0 && y > 0 ? local_height[local_idx - 35] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
-		threadIdx.x == 31 && threadIdx.y == 0 &&
-		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - 33] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
-		threadIdx.x == 0 && threadIdx.y == 7 &&
-		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + 33] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
-		threadIdx.x == 31 && threadIdx.y == 7 &&
-		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
+		x > 0 && y > 0 ? local_height[local_idx - (THREADS_X + 3)] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == 0 &&
+		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - (THREADS_X + 1)] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) &&
+		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 1)] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == (THREADS_Y - 1) &&
+		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 3)] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
 #endif
 
 		__syncthreads();
 
-		int excess = k.g.n.excess[thread_id];
-		//int status = 0;
+		//bool did_something = false;
 
-		if (excess >= 0 && x > 0 && y > 0 && x < k.g.width - 1
-				&& y < k.g.height - 1) {
-			int height = k.g.size;
+		int excess = k.g.n.excess[thread_id];
+
+		int height = 0;
+		if (excess > 0 && status > 0) {
+			height = k.g.size;
 
 			ADJUST_HEIGHT( -1, k.g.n.edge_l);
 			ADJUST_HEIGHT( 1, k.g.n.edge_r);
-			ADJUST_HEIGHT(-34, k.g.n.edge_u);
-			ADJUST_HEIGHT( 34, k.g.n.edge_d);
+			ADJUST_HEIGHT(-(THREADS_X + 2), k.g.n.edge_u);
+			ADJUST_HEIGHT( (THREADS_X + 2), k.g.n.edge_d);
 #if NEIGHBORHOOD == 8
-			ADJUST_HEIGHT(-35,k.g.n.edge_ul);
-			ADJUST_HEIGHT(-33,k.g.n.edge_ur);
-			ADJUST_HEIGHT( 33,k.g.n.edge_dl);
-			ADJUST_HEIGHT( 35,k.g.n.edge_dr);
+			ADJUST_HEIGHT(-(THREADS_X + 3),k.g.n.edge_ul);
+			ADJUST_HEIGHT(-(THREADS_X + 1),k.g.n.edge_ur);
+			ADJUST_HEIGHT( (THREADS_X + 1),k.g.n.edge_dl);
+			ADJUST_HEIGHT( (THREADS_X + 3),k.g.n.edge_dr);
 #endif
 			//height != k.g.size_ex ? printf("Changed from %d to %d\n",k.g.n.height[thread_id],height): 0;
 			//status = height != k.g.size;
+
+			/*if(local_height[local_idx] != height + 1)
+				did_something = true;*/
+
 			k.g.n.height[thread_id] = height + 1;
-			//__sync?
-			local_height[local_idx] = height + 1;
+			/*__syncthreads();
+			local_height[local_idx] = height + 1;*/
 		}
 
-		__syncthreads();
+		/*__syncthreads();
 		int comp_h = 0;
 		if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
 			UPDATE_COMP_H(0, -1);
 			UPDATE_COMP_H(1, 1);
-			UPDATE_COMP_H(2, -34);
-			UPDATE_COMP_H(3, 34);
+			UPDATE_COMP_H(2, -(THREADS_X + 2));
+			UPDATE_COMP_H(3, (THREADS_X + 2));
 #if NEIGHBORHOOD == 8
-			UPDATE_COMP_H(7,-35);
-			UPDATE_COMP_H(6,-33);
-			UPDATE_COMP_H(5, 33);
-			UPDATE_COMP_H(4, 35);
+			UPDATE_COMP_H(7,-(THREADS_X + 3));
+			UPDATE_COMP_H(6,-(THREADS_X + 1));
+			UPDATE_COMP_H(5, (THREADS_X + 1));
+			UPDATE_COMP_H(4, (THREADS_X + 3));
 #endif
 		}
-		k.g.n.comp_h[thread_id] = comp_h;
+		k.g.n.comp_h[thread_id] = comp_h;*/
 
-		k.g.n.status[thread_id] = excess > 0
-				&& local_height[local_idx] != k.g.size + 1;
+		if(status) {
+			if(height == k.g.size)
+				k.g.n.status[thread_id] = 0;
+			else
+				k.g.n.status[thread_id] = 2 - (excess > 0);
+		}
 		//k.g.n.status[thread_id] = status;
+		/*if(did_something)
+			alive[0] = 1;*/
 	}
 }
 
@@ -696,42 +747,42 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 		__shared__
 		int local_height[356];
 
-		int local_idx = (threadIdx.y + 1) * 34 + threadIdx.x + 1;
+		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
 		local_height[local_idx] = k.g.n.height[thread_id];
 
 		/*int outer_repetitions = 1;
 
 		 do {*/
-		threadIdx.x == 31 && x < k.g.width_ex - 1 ?
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 ?
 				local_height[local_idx + 1] = k.g.n.height[thread_id + 1] : 0;
 		threadIdx.x == 0 && x > 0 ?
 				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
-		threadIdx.y == 7 && y < k.g.height_ex - 1 ?
-				local_height[local_idx + 34] = k.g.n.height[thread_id
+		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
+				local_height[local_idx + (THREADS_X + 2)] = k.g.n.height[thread_id
 						+ k.g.width_ex] :
 				0;
 		threadIdx.y == 0 && y > 0 ?
-				local_height[local_idx - 34] = k.g.n.height[thread_id
+				local_height[local_idx - (THREADS_X + 2)] = k.g.n.height[thread_id
 						- k.g.width_ex] :
 				0;
 
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && threadIdx.y == 0 &&
-		x > 0 && y > 0 ? local_height[local_idx - 35] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
-		threadIdx.x == 31 && threadIdx.y == 0 &&
-		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - 33] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
-		threadIdx.x == 0 && threadIdx.y == 7 &&
-		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + 33] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
-		threadIdx.x == 31 && threadIdx.y == 7 &&
-		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + 35] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
+		x > 0 && y > 0 ? local_height[local_idx - (THREADS_X + 3)] = k.g.n.height[thread_id - 1 - k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == 0 &&
+		x < k.g.width_ex - 1 && y > 0 ? local_height[local_idx - (THREADS_X + 1)] = k.g.n.height[thread_id + 1 - k.g.width_ex] : 0;
+		threadIdx.x == 0 && threadIdx.y == (THREADS_Y - 1) &&
+		x > 0 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 1)] = k.g.n.height[thread_id - 1 + k.g.width_ex] : 0;
+		threadIdx.x == (THREADS_X - 1) && threadIdx.y == (THREADS_Y - 1) &&
+		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 3)] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
 #endif
 
 		__syncthreads();
 
 		bool changed = false;
 
-		int repetitions = 10;
+		int repetitions = GLOBAL_RELABEL_LOOPS_PER_KERNEL_CALL;
 		do {
 			int height = local_height[local_idx] - 1;
 			if (((1 << 8) & comp_n) && x > 0 && y > 0 && x < k.g.width - 1
@@ -740,13 +791,13 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 
 				COMP_ADJUST_HEIGHT( -1, 0);
 				COMP_ADJUST_HEIGHT( 1, 1);
-				COMP_ADJUST_HEIGHT(-34, 2);
-				COMP_ADJUST_HEIGHT( 34, 3);
+				COMP_ADJUST_HEIGHT(-(THREADS_X + 2), 2);
+				COMP_ADJUST_HEIGHT( (THREADS_X + 2), 3);
 #if NEIGHBORHOOD == 8
-				COMP_ADJUST_HEIGHT(-35, 4);
-				COMP_ADJUST_HEIGHT(-33, 5);
-				COMP_ADJUST_HEIGHT( 33, 6);
-				COMP_ADJUST_HEIGHT( 35, 7);
+				COMP_ADJUST_HEIGHT(-(THREADS_X + 3), 4);
+				COMP_ADJUST_HEIGHT(-(THREADS_X + 1), 5);
+				COMP_ADJUST_HEIGHT( (THREADS_X + 1), 6);
+				COMP_ADJUST_HEIGHT( (THREADS_X + 3), 7);
 #endif
 			}
 			__syncthreads();
@@ -764,6 +815,22 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 		changed ? alive[0] = 1 : 0;
 		//} while(--outer_repetitions);
 	}
+}
+
+__global__ void EnergyLevel(KernelWrapper k, int stride, int odd, int * energy) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int thread_id = x + y * k.g.width_ex;
+
+	if(stride == k.g.size_ex) {
+		k.g.n.energy_sum[thread_id] = k.g.n.excess[thread_id] > 0 ? k.g.n.excess[thread_id] : 0;
+		//k.g.n.energy_sum[thread_id] = k.g.n.height[thread_id];
+	} else if(stride == 1) {
+		if(!thread_id)
+			energy[0] = k.g.n.energy_sum[0] + k.g.n.energy_sum[1];
+	} else
+		if(thread_id < stride && (!odd || thread_id != stride - 1))
+			k.g.n.energy_sum[thread_id] += k.g.n.energy_sum[thread_id + stride];
 }
 
 #endif /* GRAPHCUTKERNELS_CU_ */

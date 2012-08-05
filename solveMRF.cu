@@ -11,43 +11,48 @@ void loadMiddleburyMRFData(const char * filename, int* &data_positive, int* &dat
 {
 	FILE * fp;
 	fp = fopen(filename,"rb");
+	assert(fp);
 
-	fscanf(fp,"%d %d %d",&width,&height,&nLabels);
+	assert(fscanf(fp,"%d %d %d",&width,&height,&nLabels)==3);
 
-	int i, x, y;
-	int gt;
+	int i, gt;
 	for(i = 0; i < width * height; i++)
-		fscanf(fp,"%d",&gt);
+		assert(fscanf(fp,"%d",&gt)==1);
+	assert(gt == gt);
 
 	assert(nLabels == 2);
 
 	data_positive = (int*) malloc(width * height * sizeof(int));
 	data_negative = (int*) malloc(width * height * sizeof(int));
+	assert(data_positive && data_negative);
+
 	int v;
 
 	for(i = 0; i < width * height; i++) {
-		fscanf(fp,"%d",&v);
+		assert(fscanf(fp,"%d",&v)==1);
 		data_positive[i] = v;
 	}
 
 	for(i = 0; i < width * height; i++) {
-		fscanf(fp,"%d",&v);
+		assert(fscanf(fp,"%d",&v)==1);
 		data_negative[i] = v;
 	}
 
 	hCue = (int*) malloc(width * height * sizeof(int));
 	vCue = (int*) malloc(width * height * sizeof(int));
+	assert(hCue && vCue);
 
+	int x, y;
 	for(y = 0; y < height; y++) {
 		for(x = 0; x < width-1; x++) {
-			fscanf(fp,"%d",&v);
+			assert(fscanf(fp,"%d",&v)==1);
 			hCue[x+y*width] = v;
 		}
 	}
 
 	for(y = 0; y < height-1; y++) {
 		for(x = 0; x < width; x++) {
-			fscanf(fp,"%d",&v);
+			assert(fscanf(fp,"%d",&v)==1);
 			vCue[y*width+x] = v;
 		}
 	}
@@ -63,7 +68,7 @@ void loadMiddleburyMRFData(const char * filename, int* &data_positive, int* &dat
 
 int main(int argc, char * argv[]) {
 	if(argc != 2) {
-		printf("Usage: %s MDF_file",argv[0]);
+		printf("Usage: %s MDF_file\n",argv[0]);
 		exit(1);
 	}
 	int* data_positive, * data_negative, * hCue, * vCue, width, height, nLabels;
@@ -93,10 +98,15 @@ int main(int argc, char * argv[]) {
 
 	printf("Solving a %d x %d MRF problem...\n",height,width);
 
+	if(NEIGHBORHOOD != 4)
+		printf("Please change NEIGHBORHOOD to 4");
+	assert(NEIGHBORHOOD == 4);
+
 	GlobalWrapper gw =
 			GC_Init(width, height, d_data_positive, d_data_negative, 0, d_up, d_down, d_left, d_right);
 
 	int * label = (int *) malloc(sizeof(int) * width * height);
+	assert(label);
 
 	GC_Optimize(gw, label);
 
