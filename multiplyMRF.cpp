@@ -6,6 +6,9 @@
 
 using namespace std;
 
+#define DO_RIHANNA 1
+#define PENALTY 600
+
 void loadMiddleburyMRFData(const char * filename, int* &data_positive, int* &data_negative, int* &hCue, int* &vCue, int &width, int &height, int &nLabels)
 {
 	FILE * fp;
@@ -100,7 +103,6 @@ void writeRihannaMRFData(int mult, int* data_positive, int* data_negative, int* 
 	for(i = 0 ; i < 3600 ; ++i)
 		for(int j = 0; j < 3600 ; j++)
 			printf("%d ",data_positive[i*width+(j%width)]);
-	exit(1);
 
 	for(i = 0 ; i < 3600 ; ++i)
 		for(int j = 0; j < 3600 ; j++)
@@ -108,26 +110,28 @@ void writeRihannaMRFData(int mult, int* data_positive, int* data_negative, int* 
 
 	for(y = 0 ; y < 3600 ; y++) {
 		for(x = 0 ; x < 3600-1 ; x++) {
-			printf("600");
+			printf("%d ",PENALTY);
 		}
 	}
 
 	for(y = 0 ; y < 3600-1 ; y++) {
 		for(x = 0 ; x < 3600; x++) {
-			printf("600");
+			printf("%d ",PENALTY);
 		}
 	}
 }
 
+
 int main(int argc, char * argv[]) {
 	if(argc != 3) {
-		printf("Usage: %s MDF_file number_of_multiplications",argv[0]);
+		printf("Usage: %s MDF_file number_of_multiplications\n",argv[0]);
 		exit(1);
 	}
 	int* data_positive, * data_negative, * hCue, * vCue, width, height, nLabels;
 	loadMiddleburyMRFData(argv[1],data_positive,data_negative,hCue,vCue,width,height,nLabels);
 
-	/*ifstream face_file;
+#if DO_RIHANNA == 1
+	ifstream face_file;
 	face_file.open("rihanna.dat");
 	//face_file.open("face.dat");
 
@@ -139,12 +143,16 @@ int main(int argc, char * argv[]) {
 		face_file >> data_negative[i];
 	for (int i = 0; i < height * width; ++i)
 		face_file >> data_positive[i];
-	face_file.close();*/
+	face_file.close();
+#endif
 
 	int mult = atoi(argv[2]);
 
-	//writeRihannaMRFData(mult,data_positive,data_negative,hCue,vCue,width,height,nLabels);
+#if DO_RIHANNA == 1
+	writeRihannaMRFData(mult,data_positive,data_negative,hCue,vCue,width,height,nLabels);
+#else
 	writeMiddleburyMRFData(mult,data_positive,data_negative,hCue,vCue,width,height,nLabels);
+#endif
 
 
 	free(data_positive);

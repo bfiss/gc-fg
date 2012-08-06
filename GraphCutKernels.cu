@@ -12,10 +12,12 @@
 
 #include <stdio.h>
 
+#define SHARED_MEMORY_SIZE ((THREADS_X + 2) * (THREADS_Y + 2))
+
 /*! \def DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)
  * \brief Internal macro used to make a push in a certain direction with a certain node.
  */
-#define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+#define DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                     \
 	do{                                                                                              \
 		cap = edge[thread_id];                                                                       \
 		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
@@ -23,7 +25,7 @@
 			flow = excess > cap ? cap : excess;                                                      \
 			excess -= flow;                                                                          \
 			edge[thread_id] -= flow;                                                                 \
-			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
+			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                          \
 			atomicSub(&k.g.n.excess[thread_id], flow);                                               \
 			atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);            \
 			did_something = true;                                                                    \
@@ -41,21 +43,21 @@
  * This version does not use atomic functions, but synchronizes. An attempt to improve the wave operator
  * by Timo Stich, but that is not very successful, perhaps due to too frequent synchronization.
  */
-#define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+#define DO_PUSH_C_WAVE(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                \
 	do{                                                                                              \
-		excess = local_excess[local_idx];     \
+		excess = local_excess[local_idx];                                                            \
 		cap = edge[thread_id];                                                                       \
-		bool changed = false; \
+		bool changed = false;                                                                       \
 		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
-           local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {                                   \
+           local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {     \
 			flow = excess > cap ? cap : excess;                                                      \
-			/*excess -= flow;                                                                          \*/ \
+			/*excess -= flow;                                                                    \*/ \
 			edge[thread_id] -= flow;                                                                 \
-			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
-			/*atomicSub(&k.g.n.excess[thread_id], flow);                                               \*/ \
-			/*atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);            \*/ \
-			local_excess[local_idx] -= flow; \
-			did_something = changed = true;                                                                    \
+			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                          \
+			/*atomicSub(&k.g.n.excess[thread_id], flow);                                         \*/ \
+			/*atomicAdd(&k.g.n.excess[thread_id + (x_gap) + (y_gap) * k.g.width_ex], flow);      \*/ \
+			local_excess[local_idx] -= flow;                                                         \
+			did_something = changed = true;                                                          \
 		}  \
 		__syncthreads(); \
 		changed ? local_excess[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] += flow : 0; \
@@ -73,19 +75,19 @@
  * This version uses atomic functions and shared memory for flow. An attempt to improve the wave operator
  * by Timo Stich.
  */
-#define DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)                                          \
+#define DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)               \
 	do{                                                                                              \
-		excess = local_excess[local_idx];     \
-		__syncthreads(); /* only for determinism */ \
+		excess = local_excess[local_idx];                                                            \
+		__syncthreads(); /* only for determinism */                                                  \
 		cap = edge[thread_id];                                                                       \
 		if(cap > 0 && excess > 0 && local_height[local_idx] ==                                       \
            local_height[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)] + 1 /*(comp_h&(1<<(comp_h_idx)))*/  ) {                                   \
 			flow = excess > cap ? cap : excess;                                                      \
-			/*excess -= flow;                                                                          \*/ \
+			/*excess -= flow;                                                                    \*/ \
 			edge[thread_id] -= flow;                                                                 \
-			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                              \
-			atomicSub(&local_excess[local_idx], flow);                                                \
-			atomicAdd(&local_excess[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)], flow);             \
+			edge_inv[thread_id + (x_gap) + (y_gap) * k.g.width_ex] += flow;                          \
+			atomicSub(&local_excess[local_idx], flow);                                               \
+			atomicAdd(&local_excess[local_idx + (x_gap) + (y_gap) * (THREADS_X + 2)], flow);         \
 			did_something = true;                                                                    \
 		}  \
 		__syncthreads(); \
@@ -95,8 +97,6 @@
  * \brief Short version for DO_PUSH_C_WAVE2 macro.
  */
 #define DO_PUSH_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,comp_h_idx) DO_PUSH_C_WAVE2(edge,edge_inv,x_min,x_max,y_min,y_max,(x_max-x_min),(y_max-y_min),comp_h_idx)
-
-
 
 //! Initializes the internal structure of Graph Cut.
 /*!
@@ -267,7 +267,7 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 	int comp_n = k.g.n.comp_n[thread_id];
 
 	__shared__
-	int local_label[356];
+	int local_label[SHARED_MEMORY_SIZE];
 
 	if (x < k.g.width && y < k.g.height) {
 
@@ -278,9 +278,12 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
 		threadIdx.x == 0 && x > 0 ?
 				local_label[local_idx - 1] = label[label_id - 1] : 0;
 		threadIdx.y == (THREADS_Y - 1) && y < k.g.height - 1 ?
-				local_label[local_idx + (THREADS_X + 2)] = label[label_id + k.g.width] : 0;
-		threadIdx.y == 0 && y > 0 ?
-				local_label[local_idx - (THREADS_X + 2)] = label[label_id - k.g.width] : 0;
+				local_label[local_idx + (THREADS_X + 2)] = label[label_id
+						+ k.g.width] :
+				0;
+		threadIdx.y == 0 && y > 0 ? local_label[local_idx - (THREADS_X + 2)] =
+											label[label_id - k.g.width] :
+									0;
 
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && threadIdx.y == 0 &&
@@ -347,18 +350,18 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
  * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void Push(KernelWrapper k, int skip, int * alive) {
-	int x = blockIdx.x * blockDim.x + threadIdx.x;
-	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	int thread_id = x + y * k.g.width_ex;
-
-	if (__syncthreads_or(k.g.n.status[thread_id] == 1)) {
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/Push(
+		KernelWrapper k, int skip, int * alive) {
+	if (k.active[blockIdx.x + blockIdx.y * k.block_x] /*__syncthreads_or(k.g.n.status[thread_id] == 1)*/) {
+		int x = blockIdx.x * blockDim.x + threadIdx.x;
+		int y = blockIdx.y * blockDim.y + threadIdx.y;
+		int thread_id = x + y * k.g.width_ex;
 		//int comp_h = k.g.n.comp_h[thread_id];
 
 		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
 		__shared__
-		int local_height[356];
+		int local_height[SHARED_MEMORY_SIZE];
 
 		local_height[local_idx] = k.g.n.height[thread_id];
 
@@ -386,15 +389,14 @@ __global__ void Push(KernelWrapper k, int skip, int * alive) {
 		x < k.g.width_ex - 1 && y < k.g.height_ex - 1 ? local_height[local_idx + (THREADS_X + 3)] = k.g.n.height[thread_id + 1 + k.g.width_ex] : 0;
 #endif
 
-		bool did_something = false;
+		bool did_something;
 
 		//if (k.g.n.status[thread_id]) {
 		int excess /*= k.g.n.excess[thread_id]*/;
 		int cap;
 		int flow;
-		for(int i = 0 ; i < PUSHES_PER_KERNEL ; ++i) {
-			/*__threadfence_block();
-			__syncthreads();*/
+		for (int i = 0; i < PUSHES_PER_KERNEL; ++i) {
+			did_something = false;
 			excess = k.g.n.excess[thread_id];
 
 			DO_PUSH(k.g.n.edge_l, k.g.n.edge_r, 1, 0, 0, 0, 0);
@@ -407,10 +409,14 @@ __global__ void Push(KernelWrapper k, int skip, int * alive) {
 			DO_PUSH(k.g.n.edge_ur,k.g.n.edge_dl,0,1,1,0,6);
 			DO_PUSH(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
 #endif
+
+			__threadfence_block();
+			if (__syncthreads_and(!did_something))
+				break;
 		}
 		//}
-		if (!skip && did_something)
-			alive[0] = 1;
+		/*if (!skip && did_something)
+		 alive[0] = 1;*/
 	}
 }
 
@@ -419,21 +425,22 @@ __global__ void Push(KernelWrapper k, int skip, int * alive) {
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
  * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrapper k, const int skip, int * alive) {
-	if (!skip || k.active[blockIdx.x + blockIdx.y * k.block_x]) {
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/WavePush(
+		KernelWrapper k, const int skip, int * alive) {
+	if (k.active[blockIdx.x + blockIdx.y * k.block_x]) {
 		const int x = blockIdx.x * blockDim.x + threadIdx.x;
 		const int y = blockIdx.y * blockDim.y + threadIdx.y;
 		const int thread_id = x + y * k.g.width_ex;
 
 		/*if(skip && !threadIdx.x && !threadIdx.y)
-			atomicAdd(&alive[0],1);*/
+		 atomicAdd(&alive[0],1);*/
 
 		//const int comp_h = k.g.n.comp_h[thread_id];
-
-		const int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
+		const int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x
+				+ 1;
 
 		__shared__
-		int local_height[356];
+		int local_height[SHARED_MEMORY_SIZE];
 
 		local_height[local_idx] = k.g.n.height[thread_id];
 
@@ -462,7 +469,7 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 #endif
 
 		__shared__
-		int local_excess[356];
+		int local_excess[SHARED_MEMORY_SIZE];
 
 		local_excess[local_idx] = k.g.n.excess[thread_id];
 
@@ -471,7 +478,9 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 		threadIdx.x == 0 && x > 0 ? local_excess[local_idx - 1] = 0 : 0;
 		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
 				local_excess[local_idx + (THREADS_X + 2)] = 0 : 0;
-		threadIdx.y == 0 && y > 0 ? local_excess[local_idx - (THREADS_X + 2)] = 0 : 0;
+		threadIdx.y == 0 && y > 0 ? local_excess[local_idx - (THREADS_X + 2)] =
+											0 :
+									0;
 
 #if NEIGHBORHOOD == 8
 		threadIdx.x == 0 && threadIdx.y == 0 && x > 0 && y > 0 ? local_excess[local_idx -(THREADS_X + 3)] = 0 : 0;
@@ -482,7 +491,7 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 
 		__syncthreads();
 
-		bool did_something = false;
+		bool did_something;
 
 		const int original_excess = local_excess[local_idx];
 
@@ -492,18 +501,21 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 		int excess;
 		int cap;
 		int flow;
-		for(int i = 0 ; i < PUSHES_PER_KERNEL ; ++i) {
+		for (int i = 0; i < PUSHES_PER_KERNEL; ++i) {
+			did_something = false;
 
-			DO_PUSH_WAVE(k.g.n.edge_l, k.g.n.edge_r, 1, 0, 0, 0, 0);
-			DO_PUSH_WAVE(k.g.n.edge_r, k.g.n.edge_l, 0, 1, 0, 0, 1);
-			DO_PUSH_WAVE(k.g.n.edge_u, k.g.n.edge_d, 0, 0, 1, 0, 2);
-			DO_PUSH_WAVE(k.g.n.edge_d, k.g.n.edge_u, 0, 0, 0, 1, 3);
+			DO_PUSH_WAVE2(k.g.n.edge_l, k.g.n.edge_r, 1, 0, 0, 0, 0);
+			DO_PUSH_WAVE2(k.g.n.edge_r, k.g.n.edge_l, 0, 1, 0, 0, 1);
+			DO_PUSH_WAVE2(k.g.n.edge_u, k.g.n.edge_d, 0, 0, 1, 0, 2);
+			DO_PUSH_WAVE2(k.g.n.edge_d, k.g.n.edge_u, 0, 0, 0, 1, 3);
 #if NEIGHBORHOOD == 8
-			DO_PUSH_WAVE(k.g.n.edge_dr,k.g.n.edge_ul,0,1,0,1,4);
-			DO_PUSH_WAVE(k.g.n.edge_dl,k.g.n.edge_ur,1,0,0,1,5);
-			DO_PUSH_WAVE(k.g.n.edge_ur,k.g.n.edge_dl,0,1,1,0,6);
-			DO_PUSH_WAVE(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
+			DO_PUSH_WAVE2(k.g.n.edge_dr,k.g.n.edge_ul,0,1,0,1,4);
+			DO_PUSH_WAVE2(k.g.n.edge_dl,k.g.n.edge_ur,1,0,0,1,5);
+			DO_PUSH_WAVE2(k.g.n.edge_ur,k.g.n.edge_dl,0,1,1,0,6);
+			DO_PUSH_WAVE2(k.g.n.edge_ul,k.g.n.edge_dr,1,0,1,0,7);
 #endif
+			if (__syncthreads_and(!did_something))
+				break;
 
 			//excess = k.g.n.excess[thread_id];
 		}
@@ -535,29 +547,38 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 						local_excess[local_idx + (THREADS_X + 2)]) :
 				0;
 #if NEIGHBORHOOD == 8
-		threadIdx.x == 0 && x > 0 &&
-		threadIdx.y == 0 && y > 0 &&
-		local_excess[local_idx - (THREADS_X + 3)] ? atomicAdd(&k.g.n.excess[thread_id - (THREADS_X + 3)], local_excess[local_idx - 1 - k.g.width_ex]) : 0;
-		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 &&
-		threadIdx.y == 0 && y > 0 &&
-		local_excess[local_idx - (THREADS_X + 1)] ? atomicAdd(&k.g.n.excess[thread_id - (THREADS_X + 1)], local_excess[local_idx + 1 - k.g.width_ex]) : 0;
-		threadIdx.x == 0 && x > 0 &&
-		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 &&
-		local_excess[local_idx + (THREADS_X + 1)] ? atomicAdd(&k.g.n.excess[thread_id + (THREADS_X + 1)], local_excess[local_idx - 1 + k.g.width_ex]) : 0;
-		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 &&
-		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 &&
-		local_excess[local_idx + (THREADS_X + 3)] ? atomicAdd(&k.g.n.excess[thread_id + (THREADS_X + 3)], local_excess[local_idx + 1 + k.g.width_ex]) : 0;
+		threadIdx.x == 0 && x > 0 && threadIdx.y == 0 && y > 0
+		&& local_excess[local_idx - (THREADS_X + 3)] ?
+		atomicAdd(&k.g.n.excess[thread_id - (k.g.width_ex + 1)],
+				local_excess[local_idx - (THREADS_X + 3)]) :
+		0;
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1 && threadIdx.y == 0
+		&& y > 0 && local_excess[local_idx - (THREADS_X + 1)] ?
+		atomicAdd(&k.g.n.excess[thread_id - (k.g.width_ex - 1)],
+				local_excess[local_idx - (THREADS_X + 1)]) :
+		0;
+		threadIdx.x == 0 && x > 0 && threadIdx.y == (THREADS_Y - 1)
+		&& y < k.g.height_ex - 1 && local_excess[local_idx + (THREADS_X + 1)] ?
+		atomicAdd(&k.g.n.excess[thread_id + (k.g.width_ex - 1)],
+				local_excess[local_idx + (THREADS_X + 1)]) :
+		0;
+		threadIdx.x == (THREADS_X - 1) && x < k.g.width_ex - 1
+		&& threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1
+		&& local_excess[local_idx + (THREADS_X + 3)] ?
+		atomicAdd(&k.g.n.excess[thread_id + (k.g.width_ex + 1)],
+				local_excess[local_idx + (THREADS_X + 3)]) :
+		0;
 #endif
 		//}
-		if (!skip && did_something)
-			alive[0] = 1;
+		/*if (!skip && did_something)
+		 alive[0] = 1;*/
 	}
 }
 
 /*! \def ADJUST_HEIGHT(diff,edge)
  * \brief Updates the current height considering the neighbor in one direction.
  */
-#define ADJUST_HEIGHT(diff,edge) (height > local_height[local_idx + (diff)] && (edge)[thread_id] > 0) ? height = local_height[local_idx + (diff)] : 0
+#define ADJUST_HEIGHT(diff,edge) (height > local_height[local_idx + (diff)] && (edge) > 0) ? height = local_height[local_idx + (diff)] : 0
 
 /*! \def UPDATE_COMP_H(i,diff)
  * \brief Updates the compressed height for one direction. Compressed heights will be used in Push.
@@ -568,20 +589,24 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y)*/ WavePush(KernelWrappe
 
 //! Performs the Relabel operation.
 /*!
- * This is one of the classical operations from Push-Relabel algorithms. Relabel is applied to every node once.
+ * This is one of the classical operations from Push-Relabel algorithms. Relabel is applied to every node once or several times,
+ * depending on the parameter RELABELS_PER_KERNEL.
  */
-__global__ void Relabel(KernelWrapper k, int skip, int * alive) {
-	int x = blockIdx.x * blockDim.x + threadIdx.x;
-	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	int thread_id = x + y * k.g.width_ex;
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/Relabel(
+		KernelWrapper k, const int skip) {
+	if (!skip
+			|| k.active[blockIdx.x + blockIdx.y * k.block_x] /*__syncthreads_or(status == 1)*/) {
+		const int x = blockIdx.x * blockDim.x + threadIdx.x;
+		const int y = blockIdx.y * blockDim.y + threadIdx.y;
+		const int thread_id = x + y * k.g.width_ex;
 
-	int status = k.g.n.status[thread_id];
-	if (!skip || __syncthreads_or(status == 1)) {
+		int status = k.g.n.status[thread_id];
 
 		__shared__
-		int local_height[356];
+		int local_height[SHARED_MEMORY_SIZE];
 
-		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
+		const int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x
+				+ 1;
 
 		local_height[local_idx] = k.g.n.height[thread_id];
 
@@ -590,12 +615,12 @@ __global__ void Relabel(KernelWrapper k, int skip, int * alive) {
 		threadIdx.x == 0 && x > 0 ?
 				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
 		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
-				local_height[local_idx + (THREADS_X + 2)] = k.g.n.height[thread_id
-						+ k.g.width_ex] :
+				local_height[local_idx + (THREADS_X + 2)] =
+						k.g.n.height[thread_id + k.g.width_ex] :
 				0;
 		threadIdx.y == 0 && y > 0 ?
-				local_height[local_idx - (THREADS_X + 2)] = k.g.n.height[thread_id
-						- k.g.width_ex] :
+				local_height[local_idx - (THREADS_X + 2)] =
+						k.g.n.height[thread_id - k.g.width_ex] :
 				0;
 
 #if NEIGHBORHOOD == 8
@@ -613,58 +638,83 @@ __global__ void Relabel(KernelWrapper k, int skip, int * alive) {
 
 		//bool did_something = false;
 
-		int excess = k.g.n.excess[thread_id];
+		const int excess = k.g.n.excess[thread_id];
 
-		int height = 0;
-		if (excess > 0 && status > 0) {
-			height = k.g.size;
-
-			ADJUST_HEIGHT( -1, k.g.n.edge_l);
-			ADJUST_HEIGHT( 1, k.g.n.edge_r);
-			ADJUST_HEIGHT(-(THREADS_X + 2), k.g.n.edge_u);
-			ADJUST_HEIGHT( (THREADS_X + 2), k.g.n.edge_d);
+		int edge_l, edge_r, edge_u, edge_d;
 #if NEIGHBORHOOD == 8
-			ADJUST_HEIGHT(-(THREADS_X + 3),k.g.n.edge_ul);
-			ADJUST_HEIGHT(-(THREADS_X + 1),k.g.n.edge_ur);
-			ADJUST_HEIGHT( (THREADS_X + 1),k.g.n.edge_dl);
-			ADJUST_HEIGHT( (THREADS_X + 3),k.g.n.edge_dr);
+		int edge_ul, edge_ur, edge_dl, edge_dr;
 #endif
-			//height != k.g.size_ex ? printf("Changed from %d to %d\n",k.g.n.height[thread_id],height): 0;
-			//status = height != k.g.size;
-
-			/*if(local_height[local_idx] != height + 1)
-				did_something = true;*/
-
-			k.g.n.height[thread_id] = height + 1;
-			/*__syncthreads();
-			local_height[local_idx] = height + 1;*/
+		if (status > 0) {
+			edge_l = k.g.n.edge_l[thread_id];
+			edge_r = k.g.n.edge_r[thread_id];
+			edge_u = k.g.n.edge_u[thread_id];
+			edge_d = k.g.n.edge_d[thread_id];
+#if NEIGHBORHOOD == 8
+			edge_ul = k.g.n.edge_ul[thread_id];
+			edge_ur = k.g.n.edge_ur[thread_id];
+			edge_dl = k.g.n.edge_dl[thread_id];
+			edge_dr = k.g.n.edge_dr[thread_id];
+#endif
 		}
+
+		int height = -1;
+
+		for (int i = 0; i < RELABELS_PER_KERNEL; ++i) {
+			//bool changed = false;
+			if (excess >= 0 && status > 0) {
+				height = k.g.size;
+				ADJUST_HEIGHT( -1, edge_l);
+				ADJUST_HEIGHT( 1, edge_r);
+				ADJUST_HEIGHT(-(THREADS_X + 2), edge_u);
+				ADJUST_HEIGHT( (THREADS_X + 2), edge_d);
+#if NEIGHBORHOOD == 8
+				ADJUST_HEIGHT(-(THREADS_X + 3),edge_ul);
+				ADJUST_HEIGHT(-(THREADS_X + 1),edge_ur);
+				ADJUST_HEIGHT( (THREADS_X + 1),edge_dl);
+				ADJUST_HEIGHT( (THREADS_X + 3),edge_dr);
+#endif
+				//height != k.g.size_ex ? printf("Changed from %d to %d\n",k.g.n.height[thread_id],height): 0;
+				//status = height != k.g.size;
+
+				/*if(local_height[local_idx] != height + 1) {
+				 changed |= true;
+				 }*/
+
+				local_height[local_idx] = height + 1;
+			}
+			/*if(__syncthreads_and(!changed))
+			 break;*/
+			__syncthreads();
+			//__syncthreads_and(!changed);
+		}
+		if (height != -1)
+			k.g.n.height[thread_id] = height + 1;
 
 		/*__syncthreads();
-		int comp_h = 0;
-		if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
-			UPDATE_COMP_H(0, -1);
-			UPDATE_COMP_H(1, 1);
-			UPDATE_COMP_H(2, -(THREADS_X + 2));
-			UPDATE_COMP_H(3, (THREADS_X + 2));
-#if NEIGHBORHOOD == 8
-			UPDATE_COMP_H(7,-(THREADS_X + 3));
-			UPDATE_COMP_H(6,-(THREADS_X + 1));
-			UPDATE_COMP_H(5, (THREADS_X + 1));
-			UPDATE_COMP_H(4, (THREADS_X + 3));
-#endif
-		}
-		k.g.n.comp_h[thread_id] = comp_h;*/
+		 int comp_h = 0;
+		 if (x > 0 && y > 0 && x < k.g.width - 1 && y < k.g.height - 1) {
+			 UPDATE_COMP_H(0, -1);
+			 UPDATE_COMP_H(1, 1);
+			 UPDATE_COMP_H(2, -(THREADS_X + 2));
+			 UPDATE_COMP_H(3, (THREADS_X + 2));
+			 #if NEIGHBORHOOD == 8
+			 UPDATE_COMP_H(7,-(THREADS_X + 3));
+			 UPDATE_COMP_H(6,-(THREADS_X + 1));
+			 UPDATE_COMP_H(5, (THREADS_X + 1));
+			 UPDATE_COMP_H(4, (THREADS_X + 3));
+			 #endif
+		 }
+		 k.g.n.comp_h[thread_id] = comp_h;*/
 
-		if(status) {
-			if(height == k.g.size)
+		if (status) {
+			if (height == k.g.size)
 				k.g.n.status[thread_id] = 0;
 			else
 				k.g.n.status[thread_id] = 2 - (excess > 0);
 		}
 		//k.g.n.status[thread_id] = status;
 		/*if(did_something)
-			alive[0] = 1;*/
+		 alive[0] = 1;*/
 	}
 }
 
@@ -672,7 +722,7 @@ __global__ void Relabel(KernelWrapper k, int skip, int * alive) {
 /*!
  */
 __global__ void UpdateActivity(int * status, int * active, int block_x,
-		int width_ex) {
+		int width_ex, int * alive) {
 	int block_id = blockIdx.x + blockIdx.y * block_x;
 	active[block_id] = 0;
 
@@ -682,7 +732,9 @@ __global__ void UpdateActivity(int * status, int * active, int block_x,
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	int thread_id = x + y * width_ex;
 
-	status[thread_id] ? active[block_id] = 1 : 0;
+	status[thread_id] == 1 ? active[block_id] = 1 : 0;
+
+	status[thread_id] == 1 ? alive[0] = 1 : 0;
 }
 
 /*! \def UPDATE_COMP_N(i,diff)
@@ -745,7 +797,7 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 	if (__syncthreads_or(comp_n & (1 << 8))) {
 
 		__shared__
-		int local_height[356];
+		int local_height[SHARED_MEMORY_SIZE];
 
 		int local_idx = (threadIdx.y + 1) * (THREADS_X + 2) + threadIdx.x + 1;
 
@@ -759,12 +811,12 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 		threadIdx.x == 0 && x > 0 ?
 				local_height[local_idx - 1] = k.g.n.height[thread_id - 1] : 0;
 		threadIdx.y == (THREADS_Y - 1) && y < k.g.height_ex - 1 ?
-				local_height[local_idx + (THREADS_X + 2)] = k.g.n.height[thread_id
-						+ k.g.width_ex] :
+				local_height[local_idx + (THREADS_X + 2)] =
+						k.g.n.height[thread_id + k.g.width_ex] :
 				0;
 		threadIdx.y == 0 && y > 0 ?
-				local_height[local_idx - (THREADS_X + 2)] = k.g.n.height[thread_id
-						- k.g.width_ex] :
+				local_height[local_idx - (THREADS_X + 2)] =
+						k.g.n.height[thread_id - k.g.width_ex] :
 				0;
 
 #if NEIGHBORHOOD == 8
@@ -817,20 +869,21 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 	}
 }
 
-__global__ void EnergyLevel(KernelWrapper k, int stride, int odd, int * energy) {
+__global__ void EnergyLevel(KernelWrapper k, int stride, int odd,
+		int * source, int * output, bool limited) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	int thread_id = x + y * k.g.width_ex;
+	int source_id = thread_id;
+	if(limited)
+		source_id = x + y * k.g.width;
 
-	if(stride == k.g.size_ex) {
-		k.g.n.energy_sum[thread_id] = k.g.n.excess[thread_id] > 0 ? k.g.n.excess[thread_id] : 0;
-		//k.g.n.energy_sum[thread_id] = k.g.n.height[thread_id];
-	} else if(stride == 1) {
-		if(!thread_id)
-			energy[0] = k.g.n.energy_sum[0] + k.g.n.energy_sum[1];
-	} else
-		if(thread_id < stride && (!odd || thread_id != stride - 1))
-			k.g.n.energy_sum[thread_id] += k.g.n.energy_sum[thread_id + stride];
+	if ((stride == k.g.size_ex && !limited) || (stride == k.g.size && limited)) {
+		if(!limited || (x >= 0 && y >= 0 && x <= k.g.width - 1 && y <= k.g.height - 1))
+			output[thread_id] = source[source_id] > 0 ? source[source_id] : 0;
+			//output[thread_id] = k.g.n.height[thread_id];
+	} else if (thread_id < stride && (!odd || thread_id != stride - 1))
+		output[thread_id] += output[thread_id + stride];
 }
 
 #endif /* GRAPHCUTKERNELS_CU_ */

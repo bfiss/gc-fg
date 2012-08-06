@@ -99,7 +99,7 @@ int main(int argc, char * argv[]) {
 	printf("Solving a %d x %d MRF problem...\n",height,width);
 
 	if(NEIGHBORHOOD != 4)
-		printf("Please change NEIGHBORHOOD to 4");
+		printf("Please change NEIGHBORHOOD to 4\n");
 	assert(NEIGHBORHOOD == 4);
 
 	GlobalWrapper gw =

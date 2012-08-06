@@ -324,6 +324,37 @@ void GC_SetGraph(GlobalWrapper gw) {
 
  }*/
 
+#define CHECK_FOR_ERRORS 0
+#define CHECK_ERROR(kernel) if(CHECK_FOR_ERRORS) {  const char * error; \
+	cutilCheckMsg(#kernel " kernel launch failure"); \
+	error = cudaGetErrorString(cudaPeekAtLastError()); \
+	printf("%s\nwith %d iters.\n", error,counter); \
+	error = cudaGetErrorString(cudaThreadSynchronize()); \
+	printf("%s\n", error); \
+} do {} while(0)
+
+#define ZERO_TO_DEV(x) CUDA_SAFE_CALL(cudaMemcpy(x,zero_arr,8*sizeof(int),cudaMemcpyHostToDevice))
+#define DEV_TO_HOST(host_x,dev_x) CUDA_SAFE_CALL(cudaMemcpy(host_x,dev_x,8*sizeof(int),cudaMemcpyDeviceToHost))
+
+void getEnergy(GlobalWrapper gw, int * source, int * dest, bool limited = false) {
+	dim3 block(THREADS_X, THREADS_Y, 1);
+	dim3 grid(gw.k.block_x, gw.block_y, 1);
+	int counter = 0;
+	int odd = 0;
+	int stride;
+	stride = limited ? gw.k.g.size : gw.k.g.size_ex;
+	for ( ; ; odd = stride % 2, stride = (stride + 1) / 2) {
+		if (stride == 1)
+			odd = 0;
+		EnergyLevel<<<grid,block>>>(gw.k, stride, odd, source, gw.k.g.n.energy_sum, limited);
+		CHECK_ERROR(EnergyLevel);
+		if (stride == 1) {
+			DEV_TO_HOST(dest,gw.k.g.n.energy_sum);
+			break;
+		}
+	}
+}
+
 //! Runs Graph Cut on given data
 /*!
  * This function expects a Global Wrapper \a gw properly initialized
@@ -339,25 +370,15 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 	initialize_graph(gw.k.g);
 #endif
 
-	int * h_curr_energy = (int *) malloc(8 * sizeof(int));
-	int * d_curr_energy;
-	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_curr_energy),8*sizeof(int)));
-
 	int * zero_arr = (int *) malloc(8 * sizeof(int));
 	zero_arr[0] = 0;
 	int * h_alive = (int *) malloc(8 * sizeof(int));
 	int * d_alive;
 	CUDA_SAFE_CALL(cudaMalloc((void**)&(d_alive),8*sizeof(int)));
 
-	int counter = 0;
-
-	//const char * error;
-
-	/*int * d_heights;
-	CUDA_SAFE_CALL(
-			cudaMalloc((void**)&(d_heights),(gw.k.g.size_ex+10)*sizeof(int)));*/
-
-	//bool dbg_verify_no_more_pushes = false;
+	getEnergy(gw, gw.data_positive, h_alive, true);
+	int initial_energy = h_alive[0];
+	printf("Initial energy level: %d\n",initial_energy);
 
 #ifdef DEBUG_MODE
 	CUDA_SAFE_CALL(cudaThreadSynchronize());
@@ -365,8 +386,9 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 	print_graph(gw.k.g);
 #endif
 
-	unsigned int total_global_relabels = 0;
-	unsigned int total_global_relabel_iterations = 0;
+	int counter = 0;
+	/*unsigned int total_global_relabels = 0;
+	unsigned int total_global_relabel_iterations = 0;*/
 	unsigned int timer = 0;
 	CUT_SAFE_CALL(cutCreateTimer(&timer));
 	CUT_SAFE_CALL(cutStartTimer(timer));
@@ -376,70 +398,43 @@ void GC_Optimize(GlobalWrapper gw, int * label) {
 
 		++counter;
 
-		if (!skip)
-			CUDA_SAFE_CALL(
-					cudaMemcpy(d_alive,zero_arr,8*sizeof(int),cudaMemcpyHostToDevice));
+		if(!skip)
+			ZERO_TO_DEV(d_alive);
 
-		Relabel<<<grid,block>>>(gw.k, skip, d_alive);
-		/*cutilCheckMsg("Relabel kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
-		 printf("%s\nwith %d iters.\n", error,counter);
-		 error = cudaGetErrorString(cudaThreadSynchronize());
-		 printf("%s\n", error);*/
+		Relabel<<<grid,block>>>(gw.k, skip);
+		CHECK_ERROR(Relabel);
 
-		//CUDA_SAFE_CALL(cudaThreadSynchronize());
 #ifdef DEBUG_MODE
 		CUDA_SAFE_CALL(cudaThreadSynchronize());
 		printf("After Relabel:\n");
 		print_graph(gw.k.g);
 #endif
-		Push<<<grid,block>>>(gw.k, skip, d_alive);
-		//WavePush<<<grid,block>>>(gw.k, skip, d_alive);
-		/*cutilCheckMsg("Push kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
-		 printf("%s\nwith %d iters.\n", error,counter);
-		 error = cudaGetErrorString(cudaThreadSynchronize());
-		 printf("%s\n", error);*/
 
-		//CUDA_SAFE_CALL(cudaThreadSynchronize());
+		//Push<<<grid,block>>>(gw.k, skip, d_alive);
+		WavePush<<<grid,block>>>(gw.k, skip, d_alive);
+		CHECK_ERROR(Push);
+
 #ifdef DEBUG_MODE
 		CUDA_SAFE_CALL(cudaThreadSynchronize());
 		printf("After Push:\n");
 		print_graph(gw.k.g);
 #endif
 
-		if (!skip)
-			CUDA_SAFE_CALL(
-					cudaMemcpy(h_alive,d_alive,8*sizeof(int),cudaMemcpyDeviceToHost));
-		//printf("Number of blocks that entered with skip: %d (out of %d).\n",h_alive[0],gw.k.block_x*gw.block_y);
-
 		if (!skip) {
-			UpdateActivity<<<grid,block>>>(gw.k.g.n.status, gw.k.active, gw.k.block_x, gw.k.g.width_ex);
-			/*cutilCheckMsg("UpdateActivity kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
-			 printf("%s\nwith %d iters.\n", error,counter);
-			 error = cudaGetErrorString(cudaThreadSynchronize());
-			 printf("%s\n", error);*/
+			UpdateActivity<<<grid,block>>>(gw.k.g.n.status, gw.k.active, gw.k.block_x, gw.k.g.width_ex, d_alive);
+			CHECK_ERROR(UpdateActivity);
 		}
 		//CUDA_SAFE_CALL(cudaThreadSynchronize());
 
-		if (!h_alive[0]) {
-			//dbg_verify_no_more_pushes = true;
+		if(!skip)
+			DEV_TO_HOST(h_alive,d_alive);
 
-			int odd = 0;
-			for (int stride = gw.k.g.size_ex;;
-					odd = stride % 2, stride = (stride + 1) / 2) {
-				if (stride == 1)
-					odd = 0;
-				EnergyLevel<<<grid,block>>>(gw.k, stride, odd, d_curr_energy);
-				/*cutilCheckMsg("EnergyLevel kernel launch failure");error = cudaGetErrorString(cudaPeekAtLastError());
-				 printf("%s\nwith %d iters.\n", error,counter);
-				 error = cudaGetErrorString(cudaThreadSynchronize());
-				 printf("%s\n", error);/*/
-				if (stride == 1) {
-					CUDA_SAFE_CALL(
-							cudaMemcpy(h_curr_energy,d_curr_energy,8*sizeof(int),cudaMemcpyDeviceToHost));
-					break;
-				}
-			}
-			printf("Final energy level: %d\n", h_curr_energy[0]);
+		if (!h_alive[0]) {
+			CUDA_SAFE_CALL(cudaThreadSynchronize());
+			CUT_SAFE_CALL(cutStopTimer(timer));
+
+			getEnergy(gw, gw.k.g.n.excess, h_alive);
+			printf("Final energy level: %d\n", initial_energy-h_alive[0]);
 
 			break;
 		}
@@ -452,8 +447,8 @@ InitGlobalRelabel<<<grid,block>>>(gw.k);
 				//if(!(iter_gr % GLOBAL_RELABEL_CHECK_FREQUENCY))
 				CUDA_SAFE_CALL(
 						cudaMemcpy(d_alive,zero_arr,8*sizeof(int),cudaMemcpyHostToDevice));
-GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
-								cutilCheckMsg("GlobalRelabel kernel launch failure");
+				GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
+				CHECK_ERROR(GlobalRelabel);
 				//if(!(iter_gr % GLOBAL_RELABEL_CHECK_FREQUENCY))
 				CUDA_SAFE_CALL(
 						cudaMemcpy(h_alive,d_alive,8*sizeof(int),cudaMemcpyDeviceToHost));
@@ -462,8 +457,8 @@ GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
 				iter_gr++;
 			}
 			printf("%d iterations inside global relabel\n", iter_gr);
-			total_global_relabel_iterations += iter_gr;
-			++total_global_relabels;
+			/*total_global_relabel_iterations += iter_gr;
+			++total_global_relabels;*/
 			h_alive[0] = 1;
 #ifdef DEBUG_MODE
 			CUDA_SAFE_CALL(cudaThreadSynchronize());
@@ -480,21 +475,14 @@ GlobalRelabel<<<grid,block>>>(gw.k, d_alive);
 	free_graph(gw.k.g);
 #endif
 
-	CUDA_SAFE_CALL(cudaThreadSynchronize());
-	CUT_SAFE_CALL(cutStopTimer(timer));
 	printf("Graph Cut used %d iterations and %f milliseconds.\n", counter,
 			cutGetTimerValue(timer));
-	printf("Resulting in %f milliseconds per iteration.\n",
+	/*printf("Resulting in %f milliseconds per iteration.\n",
 			cutGetTimerValue(timer) / counter);
 	printf("Or %f only for push and relabel.\n",
 			(cutGetTimerValue(timer) - total_global_relabel_iterations * 1.57
-					- total_global_relabels * 2.53) / counter);
+					- total_global_relabels * 2.53) / counter);*/
 	CUT_SAFE_CALL(cutDeleteTimer(timer));
-
-	//CUDA_SAFE_CALL(cudaFree(d_heights));
-
-	CUDA_SAFE_CALL(cudaFree(d_curr_energy));
-	free(h_curr_energy);
 
 	int * d_label;
 	CUDA_SAFE_CALL(

@@ -148,19 +148,21 @@ struct GlobalWrapper {
  *
  * This parameter controls after how many iterations of Push and Relabel the Global Relabel is executed.
  */
-#define GLOBAL_RELABEL_FREQUENCY 30 // 150
+#define GLOBAL_RELABEL_FREQUENCY 100 // 300
 /*! \def FIRST_GLOBAL_RELABEL
  * \brief At which iteration Global Relabel is first run.
  *
  * This parameter controls at which iteration Global Relabel is first run.
  */
-#define FIRST_GLOBAL_RELABEL 20 // 5
+#define FIRST_GLOBAL_RELABEL 100 // 200
 
 /*! \def PUSHES_PER_KERNEL
  * \brief Controls how many pushes are executed in the same kernel.
  *
  * This parameter controls the number of pushes executed consecutively inside the same Push kernel.
  */
-#define PUSHES_PER_KERNEL 4 // 4
+#define PUSHES_PER_KERNEL 40 // 40
+
+#define RELABELS_PER_KERNEL 10 // 10
 
 #endif /* GRAPHCUT_H_ */
