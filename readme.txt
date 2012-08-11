@@ -3,21 +3,23 @@ $ make
 
 To use GraphCut, try one of these examples:
 
-1. Using one of the MRF .txt in data/
- $ ./solveMRF data/person.txt
+1. Comparing with NPP:
+ $ cd nppApp
+ $ ./imageSegmentationNPP
+# this ran an example application from the NPP library on the data ../../data/person.txt
+# we now want to compare our implementation with NPP's results
+ $ cd ..
+ $ ./solveMRF ../data/person.txt
+ $ eog ../data/person_segmentation.pgm &
+# this opened NPP's result
+ $ eog labelMRF.ppm &
+# this opened our result
+# to test with another data set, change the name of the current person.txt file and rename one of the other files to person.txt
+
+2. Using one of the MRF .txt in data/
+ $ ./solveMRF ../data/flower.txt
  
  The output is in labelMRF.ppm
-
-2. Using the presentation app:
- $ ./presentation
-
- To use this app, click with the left mouse button
- to select some spots that should be tracked, and
- then with the right mouse button to perform Graph
- Cut. Change the penalty value in the trackbar to
- adjust the neighborhood labeling difference penalty.
- If a video is being used, press SPACE to pause and
- play. To exit the application, use ESC.
 
 3. Using Rihanna skin detection example:
  $ ./app
@@ -28,3 +30,5 @@ To use GraphCut, try one of these examples:
  ./dbg
  
  Results are printed to the terminal.
+
+ 

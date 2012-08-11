@@ -324,7 +324,14 @@ void GC_SetGraph(GlobalWrapper gw) {
 
  }*/
 
+/*! \def CHECK_FOR_ERRORS
+ * \brief Whether errors should be checked. Synchronizes and slows the algorithm down.
+ */
 #define CHECK_FOR_ERRORS 0
+
+/*! \def CHECK_ERROR(kernel)
+ * \brief Checks for errors after the execution of \a kernel.
+ */
 #define CHECK_ERROR(kernel) if(CHECK_FOR_ERRORS) {  const char * error; \
 	cutilCheckMsg(#kernel " kernel launch failure"); \
 	error = cudaGetErrorString(cudaPeekAtLastError()); \
@@ -333,9 +340,22 @@ void GC_SetGraph(GlobalWrapper gw) {
 	printf("%s\n", error); \
 } do {} while(0)
 
+/*! \def ZERO_TO_DEV(x)
+ * \brief Updates the content of device allocated array \a x with zeroes.
+ */
 #define ZERO_TO_DEV(x) CUDA_SAFE_CALL(cudaMemcpy(x,zero_arr,8*sizeof(int),cudaMemcpyHostToDevice))
+
+/*! \def DEV_TO_HOST(host_x,dev_x)
+ * \brief Copies from \a dev_x to \a host_x
+ */
 #define DEV_TO_HOST(host_x,dev_x) CUDA_SAFE_CALL(cudaMemcpy(host_x,dev_x,8*sizeof(int),cudaMemcpyDeviceToHost))
 
+//! Gets the energy level
+/*!
+ * This function receives a \a source vector with the current energies and sums
+ * the result into \a dest recursively. The parameter \a limited controls whether
+ * the vector is of size (limited is true) or size_ex (limited is false).
+ */
 void getEnergy(GlobalWrapper gw, int * source, int * dest, bool limited = false) {
 	dim3 block(THREADS_X, THREADS_Y, 1);
 	dim3 grid(gw.k.block_x, gw.block_y, 1);

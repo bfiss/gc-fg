@@ -73,7 +73,7 @@ struct NodeWrapper {
 	int * status; //!< Activity status of a node (whether it can push). Used to determine active blocks.
 	int * comp_h; //!< Compressed height information relating neighbors and the node itself. Used in Push.
 	int * comp_n; //!< Compressed neighborhood information. Used in Global Relabel.
-	int * energy_sum;
+	int * energy_sum; //!< Auxiliary variable used to hold the sum of energy.
 };
 
 /*! \struct GraphWrapper
@@ -163,6 +163,11 @@ struct GlobalWrapper {
  */
 #define PUSHES_PER_KERNEL 40 // 40
 
+/*! \def RELABELS_PER_KERNEL
+ * \brief Controls how many relabels are executed in the same kernel.
+ *
+ * This parameter controls the number of relabels executed consecutively inside the same Relabel kernel.
+ */
 #define RELABELS_PER_KERNEL 10 // 10
 
 #endif /* GRAPHCUT_H_ */

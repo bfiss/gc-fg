@@ -12,6 +12,11 @@
 
 #include <stdio.h>
 
+/*! \def SHARED_MEMORY_SIZE
+ * \brief The size of shared memory vectors to hold height or excess information.
+ *
+ * The size of shared memory vectors to hold height or excess information.
+ */
 #define SHARED_MEMORY_SIZE ((THREADS_X + 2) * (THREADS_Y + 2))
 
 /*! \def DO_PUSH_C(edge,edge_inv,x_min,x_max,y_min,y_max,x_gap,y_gap,comp_h_idx)
@@ -350,7 +355,7 @@ __global__ void SpreadLabels(KernelWrapper k, int * label, int * alive) {
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
  * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/Push(
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/ Push(
 		KernelWrapper k, int skip, int * alive) {
 	if (k.active[blockIdx.x + blockIdx.y * k.block_x] /*__syncthreads_or(k.g.n.status[thread_id] == 1)*/) {
 		int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -425,7 +430,7 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/Push(
  * This is one of the classical operations from Push-Relabel algorithms. Push is applied to every node once or several times,
  * depending on the parameter PUSHES_PER_KERNEL.
  */
-__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/WavePush(
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/ WavePush(
 		KernelWrapper k, const int skip, int * alive) {
 	if (k.active[blockIdx.x + blockIdx.y * k.block_x]) {
 		const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -592,7 +597,7 @@ __global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/WavePush(
  * This is one of the classical operations from Push-Relabel algorithms. Relabel is applied to every node once or several times,
  * depending on the parameter RELABELS_PER_KERNEL.
  */
-__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/Relabel(
+__global__ void /*__launch_bounds__(THREADS_X*THREADS_Y,6)*/ Relabel(
 		KernelWrapper k, const int skip) {
 	if (!skip
 			|| k.active[blockIdx.x + blockIdx.y * k.block_x] /*__syncthreads_or(status == 1)*/) {
@@ -869,6 +874,12 @@ __global__ void GlobalRelabel(KernelWrapper k, int * alive) {
 	}
 }
 
+//! Calculates the total energy level in the current state of the graph.
+/*!
+ * This function parallelly sums up the positive values of \a source, and the
+ * result shall be in the 1st position of \a output.
+ *
+ */
 __global__ void EnergyLevel(KernelWrapper k, int stride, int odd,
 		int * source, int * output, bool limited) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
